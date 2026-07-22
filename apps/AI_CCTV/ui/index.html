@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>AI CCTV 결함 분석기</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <section class="left-panel">
+      <div class="video-name" id="videoName">영상 파일명</div>
+
+      <div class="video-card" id="videoCard" title="휠: 확대/축소, 드래그: 이동, 더블클릭: 원래대로">
+        <div class="preview-viewport" id="previewViewport">
+          <img id="previewImg" class="preview-img" alt="" />
+          <div id="boxOverlay" class="box-overlay"></div>
+        </div>
+      </div>
+
+      <div class="ctrl-frame">
+        <button id="btnPlay" class="icon-btn" title="재생/일시정지">▶</button>
+        <div class="speed-group" id="speedGroup">
+          <button class="speed-btn active" data-speed="1">1x</button>
+          <button class="speed-btn" data-speed="1.5">1.5x</button>
+          <button class="speed-btn" data-speed="2">2x</button>
+          <button class="speed-btn" data-speed="2.5">2.5x</button>
+        </div>
+        <input type="range" id="seekSlider" min="0" max="100" value="0" step="1" />
+        <span id="lblTime" class="time-label">00:00</span>
+      </div>
+
+      <div class="list-card">
+        <div class="list-header">
+          <span class="list-title">분석 대기 영상</span>
+          <div class="list-buttons">
+            <button id="btnAddVideos" class="clean-btn">파일추가</button>
+            <button id="btnClearVideos" class="clean-btn">목록삭제</button>
+          </div>
+        </div>
+        <ul id="videoList" class="video-list"></ul>
+      </div>
+
+      <div class="log-frame">
+        <div class="log-title">System Log</div>
+        <div id="logConsole" class="log-console"></div>
+      </div>
+    </section>
+
+    <section class="right-panel">
+      <div class="in-card">
+        <label for="siteName">현장명</label>
+        <input type="text" id="siteName" />
+        <span id="status" class="status">분석대기</span>
+      </div>
+
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="tabResults">결과표</button>
+        <button class="tab-btn" data-tab="tabStats">통계</button>
+      </div>
+
+      <div id="tabResults" class="tab-page">
+        <div class="filter-bar">
+          <label class="filter-label">신뢰도 ≥ <span id="confVal">0</span>%</label>
+          <input type="range" id="confSlider" min="0" max="95" value="0" step="5" />
+          <div id="classFilter" class="class-filter"></div>
+        </div>
+
+        <div class="tree-card">
+          <table id="resultsTable">
+            <thead>
+              <tr>
+                <th class="col-seq">순번</th>
+                <th class="col-time">시간</th>
+                <th class="col-pipe">관로번호</th>
+                <th class="col-dia">직경</th>
+                <th class="col-dist">거리</th>
+                <th class="col-defects">결함항목</th>
+                <th class="col-note">비고</th>
+                <th class="col-fp">오탐</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+          </table>
+        </div>
+
+        <div class="act-frame">
+          <button id="btnRun" class="clean-btn primary">분석 실행</button>
+          <button id="btnAddRow" class="clean-btn">+ 행 추가</button>
+          <button id="btnDelRow" class="clean-btn">- 행 삭제</button>
+          <button id="btnExport" class="clean-btn">보고서 출력</button>
+        </div>
+      </div>
+
+      <div id="tabStats" class="tab-page" hidden>
+        <div class="tree-card">
+          <table id="statsTable">
+            <thead id="statsHead"></thead>
+            <tbody id="statsBody"></tbody>
+          </table>
+        </div>
+        <p class="stats-note">오탐으로 마킹한 행은 집계에서 제외됩니다. 신뢰도/클래스 필터와는 무관하게 전체 기준입니다.</p>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

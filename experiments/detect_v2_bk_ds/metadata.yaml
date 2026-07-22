@@ -1,0 +1,41 @@
+experiment_group: detect_v2_bk_ds
+date: 2026-07-10
+task: detect
+model: yolo11l.pt
+
+dataset:
+  status: workstation_only
+  workstation_path: /home/workstation/ai_cctv/260709_test2/dataset
+  local_path: null
+  intended_classes:
+    - BK
+    - DS
+  class_mapping: null
+  train_images: null
+  val_images: null
+  test_images: null
+  source_manifest: null
+  note: >-
+    실험명에는 16000이 포함되어 있으나 결과 폴더만으로 실제 이미지 수와
+    클래스 번호를 확인할 수 없어 비워 둠.
+
+training:
+  imgsz: 960
+  configured_epochs: 50
+  completed_epochs: 50
+  batch: auto
+  cache: true
+  cos_lr: true
+  device: 0
+
+result:
+  name: test2_yolo11L_BK_DS_16000-2
+  path: E:/AI_CCTV_RESULTS/detect_v2_bk_ds/test2_yolo11L_BK_DS_16000-2
+  best_epoch: 47
+  best_precision: 0.78096
+  best_recall: 0.77935
+  best_map50: 0.82016
+  best_map50_95: 0.59810
+  final_map50: 0.81948
+  final_map50_95: 0.59773
+

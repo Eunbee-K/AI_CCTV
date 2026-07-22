@@ -1,0 +1,9 @@
+# E:/AI_CCTV_DATASET/detect_v2 is metadata-only.
+# Reconstruct or copy actual files here before training.
+path: E:/AI_CCTV_DATASET/_materialized/detect_v2
+train: images/train
+val: images/val
+test: images/test
+
+# Fill this mapping after checking the workstation data.yaml.
+names: {}

@@ -1,0 +1,88 @@
+# test4_seg — 세그멘테이션 라벨로 YOLO11-seg 모델 학습.
+#
+# 클래스 선정 기준: aihub_data_seg에 폴리곤 라벨이 있는 결함 중 3,000장 내외로
+# 수량이 균일한 8종만 사용 (CL 3,995 / CC 2,993 / SD 2,998 / BK 2,998 /
+# LP 2,999 / JF 2,997 / JD 3,000 / DS 2,999 — 전량 사용, 8:1:1 분할).
+# 제외한 것들과 이유:
+#   - ETC(기타, 4,994장): 여러 결함이 섞인 잡동사니 클래스라 모델을 혼란시킴
+#   - LS(1,390)/JS(1,300)/CM(388) 등 서울시 seg 전용 클래스: 라벨이 아직
+#     XML/LabelMe JSON(폴리곤) 원본이라 미변환 상태 + 수량도 부족
+#   - 그 외(BC/CX/DE/DF/DG/HL/IF/LD/NS/PO/RT/SG/TO): 24~583장으로 절대량 부족
+# 배경(정상) 샘플: aihub_data_bbox의 IN/PJ를 소량(약 9%) 포함 — 라벨은 이미
+# 빈 파일로 처리되어 있어 seg 학습에서도 그대로 배경으로 동작한다.
+#
+# 실제로 쓸 때는 이 파일을 복사해서(예: test4_seg.yaml) 워크스테이션 환경에
+# 맞게 external_root / workspace / model 경로를 수정한 뒤 사용할 것.
+# test3와 summary_csv를 같은 경로로 두면 요약표 하나에 두 실험이 같이 쌓인다.
+
+sweep_name: test4_seg_sweep01
+
+dataset:
+  external_root: /mnt/external_hdd/AI_CCTV_DATASET/original
+  split_seed: 42
+
+  classes:
+    CL:
+      quota: {train: 3195, val: 400, test: 400}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-1-1.균열-길이(Crack-Longitudinal,CL)", labels: "aihub_data_seg/labels/CL"}
+    CC:
+      quota: {train: 2393, val: 300, test: 300}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-1-2.균열-원주(Crack-Circumferential,CC)", labels: "aihub_data_seg/labels/CC"}
+    SD:
+      quota: {train: 2398, val: 300, test: 300}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-2.표면손상(Surface-Damage,SD)", labels: "aihub_data_seg/labels/SD"}
+    BK:
+      quota: {train: 2398, val: 300, test: 300}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-3.파손(Broken-Pipe,BK)", labels: "aihub_data_seg/labels/BK"}
+    LP:
+      quota: {train: 2399, val: 300, test: 300}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-4.연결관-돌출(Lateral-Protruding,LP)", labels: "aihub_data_seg/labels/LP"}
+    JF:
+      quota: {train: 2397, val: 300, test: 300}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-5.이음부-손상(Joint-Faulty,JF)", labels: "aihub_data_seg/labels/JF"}
+    JD:
+      quota: {train: 2400, val: 300, test: 300}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-6.이음부-단차(Joint-Displaced,JD)", labels: "aihub_data_seg/labels/JD"}
+    DS:
+      quota: {train: 2399, val: 300, test: 300}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-7.토사퇴적(Deposits-Silty,DS)", labels: "aihub_data_seg/labels/DS"}
+    # 배경(정상) 샘플 — bbox 쪽과 동일하게 빈 라벨로 학습 (전체의 약 9%)
+    PJ:
+      background: true
+      quota: {train: 1000, val: 150, test: 150}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: PJ}
+    IN:
+      background: true
+      quota: {train: 1000, val: 150, test: 150}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: IN}
+
+workspace:
+  # test3와 같은 경로를 써도 된다 (sweep_name별로 하위 폴더가 나뉘고,
+  # summary_csv는 한 표에 두 실험이 함께 쌓여 메일 한 번에 다 온다).
+  dataset_root: /home/workstation/ai_cctv/_sweep_workspace/dataset
+  results_root: /home/workstation/ai_cctv/_sweep_workspace/results
+  summary_csv: /home/workstation/ai_cctv/_sweep_workspace/sweep_summary.csv
+  keep_last_weight: false
+
+# 세그멘테이션 모델 가중치 — 워크스테이션에 미리 받아둘 것 (오프라인 다운로드 불가).
+model: /home/workstation/ai_cctv/pretrained_models/yolo11l-seg.pt
+device: 0
+cache: false
+cos_lr: true
+patience: 30
+
+runs:
+  - name: test4seg_960_e50
+    imgsz: 960
+    epochs: 50
+    batch: -1

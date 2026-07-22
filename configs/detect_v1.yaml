@@ -1,0 +1,9 @@
+# E:/AI_CCTV_DATASET/detect_v1 is metadata-only.
+# Reconstruct actual files here before training.
+path: E:/AI_CCTV_DATASET/_materialized/detect_v1
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: crack

@@ -1,0 +1,64 @@
+experiment_group: detect_v1_crack
+date: 2026-06-29
+task: detect
+model_family: yolo11l
+
+dataset:
+  status: temporary_local_copy
+  current_path: E:/02. 260629_Model_Test1/ai_cctv/dataset
+  copied_to_ai_cctv_dataset: false
+  train_images: 11000
+  val_images: 1800
+  test_images: 4549
+  classes:
+    0: crack
+  source_manifest:
+    train: E:/AI_CCTV_DATASET/detect_v1/manifests/train.csv
+    val: E:/AI_CCTV_DATASET/detect_v1/manifests/val.csv
+    test: E:/AI_CCTV_DATASET/detect_v1/manifests/test.csv
+  split_seed: null
+  reconstruction_note: >-
+    당시 train/val/test 파일명 목록은 detect_v1 manifest에 저장됨.
+    파일별 원본 절대경로는 기록하지 않았으므로 복원 시 원본 폴더에서
+    동일한 파일명을 다시 검색해야 함.
+
+results_path: E:/AI_CCTV_RESULTS/detect_v1_crack
+
+runs:
+  - name: sewer_yolo11l_1000test
+    imgsz: 640
+    configured_epochs: 100
+    completed_epochs: 100
+    best_epoch: 86
+    best_map50_95: 0.50128
+    best_map50: 0.78133
+  - name: sewer_yolo11l_1000test-2
+    imgsz: 640
+    configured_epochs: 200
+    completed_epochs: 136
+    best_epoch: 106
+    best_map50_95: 0.47509
+    best_map50: 0.78767
+  - name: sewer_yolo11l_1000test-3
+    imgsz: 1280
+    configured_epochs: 100
+    completed_epochs: 100
+    best_epoch: 94
+    best_map50_95: 0.42044
+    best_map50: 0.74679
+  - name: sewer_yolo11l_1000test-4
+    imgsz: 960
+    configured_epochs: 100
+    completed_epochs: 100
+    best_epoch: 86
+    best_map50_95: 0.48815
+    best_map50: 0.79507
+  - name: sewer_yolo11l_960
+    status: incomplete_or_no_results_csv
+  - name: sewer_yolo11l_960-2
+    imgsz: 960
+    configured_epochs: 100
+    completed_epochs: 70
+    best_epoch: 40
+    best_map50_95: 0.43690
+    best_map50: 0.67384
