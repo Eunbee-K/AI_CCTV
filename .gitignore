@@ -10,6 +10,9 @@ venv/
 .DS_Store
 Thumbs.db
 
+# Office lock/temp files
+~$*
+
 # Large ML artifacts
 *.pt
 *.pth
