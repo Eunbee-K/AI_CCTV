@@ -1,0 +1,135 @@
+# test3_18class_20h_260729 — 2026-07-29 실행한 bbox 18클래스 파이프라인 검증용
+# 스윕. test3_18class.yaml(본학습, 클래스당 최대 12000장)과 같은 18개 클래스·
+# 같은 소스를 쓰되, 데이터가 풍부한 10개 클래스(BK/CC/CL/DS/JD/JF/LP/SD/PJ/IN)만
+# 3900/488/488로 줄였다(6000/750/750의 65% — 같은 날 이어서 돌리는
+# test4_seg_20h_260729.yaml과 합쳐서 20시간 예산에 맞추려고 둘 다 65%로 축소).
+# 데이터가 원래 부족해서 상한이 낮은 8개 클래스(CM/HL/JS/LS/PO/RT/SG/TO)는
+# test3_18class.yaml과 동일(이미 가용량 근처라 더 줄일 이유가 없음).
+#
+# 산정 근거: 2026-07-29 기준 이미 GPU에서 돌고 있던 legacy 5클래스 학습
+# (test3_yolo11L_class5_16000, batch=4, imgsz=960, train 80,000장)의 실측
+# 에폭당 시간이 1424초(23.7분)로 매우 일정했음 -> 56.2 img/s.
+# train 52,992장 x 50epoch / 56.2 img/s ≈ 47,143초 ≈ 13.1시간
+# (+ test4_seg_20h_260729.yaml 약 7.1시간 = 합계 약 20.2시간, 둘 다 보수적으로
+# 잡은 값이라 실제는 이보다 빠를 가능성이 높음. run_sweep.py에 두 config를
+# 같이 줘서 이어서 실행).
+
+sweep_name: test3_18class_20h_260729_sweep01
+
+dataset:
+  external_root: /home/workstation/ai_cctv/AI_CCTV_DATASET/original
+  split_seed: 42
+
+  classes:
+    BK:
+      quota: {train: 3900, val: 488, test: 488}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/BK_S20_파손"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_BK_05파손(BK)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: BK}
+    CC:
+      quota: {train: 3900, val: 488, test: 488}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/CC_S20_균열(원주)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_CC_03균열원주(CC)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: CC}
+    CL:
+      quota: {train: 3900, val: 488, test: 488}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/CL_S20_균열(길이)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_CL_01균열길이(CL)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: CL}
+    CM:
+      quota: {train: 617, val: 77, test: 77}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/CM_S20_균열(복합)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_CM_02균열복합(CM)"}
+    DS:
+      quota: {train: 3900, val: 488, test: 488}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/DS_S20_토사퇴적"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_DS_11토사퇴적(DS)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: DS}
+    HL:
+      quota: {train: 886, val: 111, test: 110}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/HL_S20_천공"}
+    JD:
+      quota: {train: 3900, val: 488, test: 488}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/JD_S20_이음부(단차)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_JD_08이음부단차(JD)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: JD}
+    JF:
+      quota: {train: 3900, val: 488, test: 488}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/JF_S20_이음부(손상)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_JF_09이음부손상(JF)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: JF}
+    JS:
+      # 보유 4,124장 전량 사용 (엑셀 "상세 현황" 기준: S20 3,724 + S22 400)
+      quota: {train: 3300, val: 412, test: 412}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/JS_S20_이음부(이탈)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_JS_10이음부이탈(JS)"}
+    LP:
+      quota: {train: 3900, val: 488, test: 488}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/LP_S20_연결관(돌출)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_LP_06연결관돌출(LP)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: LP}
+    LS:
+      # 보유 8,796장 전량 사용 (S20 8,396 + S22 400)
+      quota: {train: 7036, val: 880, test: 880}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/LS_S20_연결관(접합부이상)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_LS_07연결관접합부(LS)"}
+    PO:
+      quota: {train: 664, val: 83, test: 83}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/PO_S20_영구장애물"}
+    RT:
+      quota: {train: 440, val: 55, test: 55}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/RT_S20_뿌리침입"}
+    SD:
+      quota: {train: 3900, val: 488, test: 488}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/SD_S20_표면손상"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_SD_04표면손상(SD)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: SD}
+    SG:
+      quota: {train: 505, val: 63, test: 63}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/SG_S20_침하"}
+    TO:
+      quota: {train: 544, val: 68, test: 68}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/TO_S20_임시장애물"}
+    PJ:
+      background: true
+      quota: {train: 3900, val: 488, test: 488}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: PJ}
+    IN:
+      background: true
+      quota: {train: 3900, val: 488, test: 488}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: IN}
+
+workspace:
+  dataset_root: /home/workstation/ai_cctv/_sweep_workspace/dataset
+  results_root: /home/workstation/ai_cctv/_sweep_workspace/results
+  summary_csv: /home/workstation/ai_cctv/_sweep_workspace/sweep_summary.csv
+
+model: /home/workstation/ai_cctv/pretrained_models/yolo11l.pt
+device: 0
+cache: false
+cos_lr: true
+patience: 30
+
+runs:
+  - name: test3_18class_20h_260729_960_e50
+    imgsz: 960
+    epochs: 50
+    batch: -1

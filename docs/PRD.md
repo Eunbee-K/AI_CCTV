@@ -2,7 +2,9 @@
 
 - 문서 버전: v0.1 (초안, 코드베이스 리버스엔지니어링 기반 작성)
 - 작성일: 2026-07-24
-- 대상: `E:\AI_CCTV_PROJECT\apps\AI_CCTV` (배포 애플리케이션) + 이를 뒷받침하는 YOLO 학습/실험 파이프라인
+- 대상: `AI_CCTV_PROJECT\apps\AI_CCTV` (배포 애플리케이션) + 이를 뒷받침하는 YOLO 학습/실험 파이프라인
+  (저장소는 외장 SSD/HDD `E:\`와 워크스테이션 로컬 `/home/workstation/ai_cctv/` 두 곳에 존재 — 자세한
+  내용은 `CLAUDE.md` 참고)
 - 범위: **딥러닝 기반 CCTV 하수관로 결함 탐지 제품**을 다룬다. 데이터 라벨링/정리 도구, 학습 자동화 스크립트는 이 제품을 만드는 수단으로만 언급하고 상세 요구사항은 별도 문서로 다룬다.
 
 ---
@@ -150,4 +152,4 @@ FastAPI + uvicorn + pywebview(데스크톱 창) + vanilla JS(빌드 스텝 없�
 
 ---
 
-*본 문서는 `E:\AI_CCTV_PROJECT` 코드베이스(앱 소스, README, 실험 metadata, configs/sweeps, notebooks) 리버스엔지니어링을 근거로 작성되었으며, 비즈니스 목표·일정·정량 지표 등 코드에 없는 정보는 TBD로 표기했습니다. 실제 이해관계자 확인 후 정식본으로 갱신이 필요합니다.*
+*본 문서는 2026-07-24 작성 당시 외장하드(`E:\AI_CCTV_PROJECT`)의 코드베이스(앱 소스, README, 실험 metadata, configs/sweeps, notebooks) 리버스엔지니어링을 근거로 작성되었으며, 비즈니스 목표·일정·정량 지표 등 코드에 없는 정보는 TBD로 표기했습니다. 실제 이해관계자 확인 후 정식본으로 갱신이 필요합니다. (2026-07-29부터 이 코드베이스는 워크스테이션 로컬 `/home/workstation/ai_cctv/AI_CCTV_PROJECT`에도 동일하게 존재합니다.)*

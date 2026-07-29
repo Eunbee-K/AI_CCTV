@@ -1,14 +1,30 @@
 # CLAUDE.md — AI_CCTV_PROJECT 컨텍스트
 
 이 파일은 Claude Code가 이 프로젝트 폴더에서 작업을 시작할 때 자동으로 읽는 컨텍스트 파일입니다.
-이 저장소는 **외장 SSD/HDD(이동식 드라이브)** 안에 있습니다. 드라이브 문자는 연결한 PC마다
-다를 수 있습니다(원래 PC에서는 `E:\`) — 작업 전에 실제 드라이브 문자를 먼저 확인하세요.
+이 저장소는 두 곳에 존재합니다:
 
-## 드라이브 안 폴더 구조 (드라이브 루트 기준)
+1. **외장 SSD/HDD(이동식 드라이브)**: 드라이브 문자는 연결한 PC마다 다를 수 있습니다(원래 PC에서는
+   `E:\`) — 작업 전에 실제 드라이브 문자를 먼저 확인하세요. 다른 PC로 옮겨 다닐 때 쓰는 원본/사본.
+2. **워크스테이션 로컬 고정 경로** (`/home/workstation/ai_cctv/`): 2026-07-29 세션에서 이 워크스테이션
+   전용으로 통째로 복사해둔 사본. `AI_CCTV_DATASET`(원본 데이터셋)·`AI_CCTV_RESULTS`(옛 수동 실험
+   결과)도 같은 위치에 로컬 복사해뒀고, `configs/sweeps/*.yaml`은 전부 이 로컬 경로를 가리키도록
+   맞춰져 있어서 외장하드를 뽑아도 스윕 학습이 그대로 돈다. 자세한 폴더 구성은 아래 "최근 작업
+   로그" 참고.
+
+## 드라이브 안 폴더 구조 (외장하드 루트 기준)
 
 - `AI_CCTV_PROJECT\` — 이 저장소 (git 관리). 앱 코드, 학습 설정/실험 메타데이터, 문서.
 - `AI_CCTV_DATASET\` — 실제 데이터셋 (git 미관리, 용량 큼).
 - `AI_CCTV\` — 독립 실행되는 라벨 변환 GUI 도구 (`aihub_yolo_converter_gui.py`, `convert_aihub_to_yolo.py`). AIHub JSON/JSONL 라벨을 YOLO txt로 변환할 때 사용.
+
+## 워크스테이션 로컬 폴더 구조 (`/home/workstation/ai_cctv/` 기준)
+
+- `AI_CCTV_PROJECT/` — 이 저장소의 로컬 사본 (실제 작업 위치).
+- `AI_CCTV_DATASET/original/` — 외장하드 `AI_CCTV_DATASET/original` 전체 로컬 복사 (~424GB).
+- `AI_CCTV_RESULTS/` — 외장하드 `AI_CCTV_RESULTS`(옛 수동 실험 결과) 로컬 복사.
+- `pretrained_models/` — `yolo11l.pt`/`yolo11m.pt`/`yolo11n.pt`/`yolo26n.pt`/`yolo11l-seg.pt`.
+- `_sweep_workspace/` — `run_sweep.py`가 실행 중 자동 생성하는 임시 데이터셋/결과 폴더.
+- `legacy/` — 스윕 자동화 이전 수동 실험 흔적 (`260629_test1` 등). 참고용으로만 보존.
 
 ## 프로젝트가 무엇인지
 
@@ -18,8 +34,10 @@
 
 핵심 요약:
 - 현재 배포 모델(`apps/AI_CCTV/assets/best.pt`)은 실사용 가능한 클래스가 **BK(파손)·DS(토사퇴적) 2종뿐**.
-- 목표는 18종 탐지(`configs/sweeps/test3_18class.example.yaml`) / 8종 세그멘테이션
-  (`configs/sweeps/test4_seg.example.yaml`) / 31종 마스터 결함 코드 체계(`docs/메타데이터(총괄).xlsx`).
+- 목표는 18종 탐지(`configs/sweeps/test3_18class.yaml`) / 8종 세그멘테이션
+  (`configs/sweeps/test4_seg.yaml`) / 31종 마스터 결함 코드 체계(`docs/메타데이터(총괄).xlsx`).
+  오늘(2026-07-29) 안에 끝내는 20시간 예산판 `test3_18class_20h.yaml` /
+  `test4_seg_20h.yaml`도 있음 (자세한 내용은 세션 로그 참고).
 - 기본 추론 경로가 Google Colab 무료 GPU + ngrok 고정 도메인에 의존 — 세션 만료 시 탐지 기능 전체가 멈추는
   구조적 리스크가 있음 (PRD §7 참고).
 
@@ -67,7 +85,7 @@
 
 ## 다음에 이어서 할 만한 것 (PRD §8 로드맵 근거)
 
-- `configs/sweeps/test3_18class.example.yaml` 스윕 실행 → 18종 탐지 모델 학습 (데이터는 이제
+- `configs/sweeps/test3_18class.yaml` 스윕 실행 → 18종 탐지 모델 학습 (데이터는 이제
   `aihub_data_bbox/image`, `labels` 아래 클래스별 폴더로 정리되어 있어 바로 활용 가능).
 - `configs/detect_v2.yaml`의 빈 `names: {}` 필드, `experiments/detect_v2_bk_ds/metadata.yaml`의
   TBD 항목 채워넣기.

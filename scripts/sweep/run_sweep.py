@@ -8,7 +8,9 @@ run 하나마다:
 
 인터넷이 없는 환경에서 그대로 돌아가도록 설계했다 (외부 API 호출 없음).
 중간에 프로세스가 죽거나 워크스테이션이 재부팅돼도, sweep_state.json에
-status="done"으로 남은 run은 건너뛰고 이어서 진행한다.
+status="done"으로 남은 run은 건너뛰고 이어서 진행한다. status="done"이 아닌
+채로 중단된 run은 weights/last.pt가 남아 있으면 그 지점부터 학습을 이어서
+재개한다 (last.pt는 그래서 학습 완료 후에도 지우지 않는다).
 """
 import argparse
 import json
@@ -33,29 +35,41 @@ def run_one(cfg: dict, run_cfg: dict, log) -> dict:
     dataset_root = Path(cfg["workspace"]["dataset_root"]) / run_name
     results_root = Path(cfg["workspace"]["results_root"])
     run_result_dir = results_root / sweep_name / run_name
+    data_yaml = dataset_root / "data.yaml"
+    last_pt = run_result_dir / "weights" / "last.pt"
 
-    log.info(f"[{run_name}] 1/3 데이터셋 구성 중 (외장하드 -> {dataset_root})")
-    manifest = collect_dataset.materialize(cfg, dataset_root)
-    log.info(f"[{run_name}] 데이터셋 완료: {manifest['image_counts']}")
+    if data_yaml.exists():
+        log.info(f"[{run_name}] 1/3 이전 시도에서 남은 임시 데이터셋 재사용 ({dataset_root})")
+        with open(dataset_root / "materialize_manifest.json", "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    else:
+        log.info(f"[{run_name}] 1/3 데이터셋 구성 중 (외장하드 -> {dataset_root})")
+        manifest = collect_dataset.materialize(cfg, dataset_root)
+        log.info(f"[{run_name}] 데이터셋 완료: {manifest['image_counts']}")
 
-    log.info(f"[{run_name}] 2/3 학습 시작 (imgsz={run_cfg['imgsz']}, epochs={run_cfg['epochs']}, batch={run_cfg.get('batch', 'auto')})")
     from ultralytics import YOLO  # 학습 시점에만 import (스캔/설계 단계에서 torch 로딩 방지)
 
-    model = YOLO(cfg["model"])
-    train_metrics = model.train(
-        data=str(dataset_root / "data.yaml"),
-        imgsz=run_cfg["imgsz"],
-        epochs=run_cfg["epochs"],
-        batch=run_cfg.get("batch", "auto"),
-        device=cfg.get("device", 0),
-        cache=cfg.get("cache", True),
-        cos_lr=cfg.get("cos_lr", True),
-        patience=cfg.get("patience", 50),
-        project=str(results_root / sweep_name),
-        name=run_name,
-        exist_ok=True,
-        verbose=False,
-    )
+    if last_pt.exists():
+        log.info(f"[{run_name}] 2/3 이전 중단 지점에서 학습 재개 (resume, {last_pt})")
+        model = YOLO(str(last_pt))
+        train_metrics = model.train(resume=True)
+    else:
+        log.info(f"[{run_name}] 2/3 학습 시작 (imgsz={run_cfg['imgsz']}, epochs={run_cfg['epochs']}, batch={run_cfg.get('batch', 'auto')})")
+        model = YOLO(cfg["model"])
+        train_metrics = model.train(
+            data=str(data_yaml),
+            imgsz=run_cfg["imgsz"],
+            epochs=run_cfg["epochs"],
+            batch=run_cfg.get("batch", "auto"),
+            device=cfg.get("device", 0),
+            cache=cfg.get("cache", True),
+            cos_lr=cfg.get("cos_lr", True),
+            patience=cfg.get("patience", 50),
+            project=str(results_root / sweep_name),
+            name=run_name,
+            exist_ok=True,
+            verbose=False,
+        )
 
     log.info(f"[{run_name}] 3/3 결과 정리 중")
     metrics = report.parse_ultralytics_results_csv(run_result_dir / "results.csv")
@@ -88,10 +102,6 @@ def run_one(cfg: dict, run_cfg: dict, log) -> dict:
 
     used_files_copy = run_result_dir / "used_files.csv"
     shutil.copy2(dataset_root / "used_files.csv", used_files_copy)
-
-    if not cfg["workspace"].get("keep_last_weight", False):
-        last_pt = run_result_dir / "weights" / "last.pt"
-        last_pt.unlink(missing_ok=True)
 
     row = {
         "sweep_name": sweep_name,
@@ -139,14 +149,14 @@ def run_sweep(config_path: str, state_arg: str = None) -> None:
             row = run_one(cfg, run_cfg, log)
             state.set(run_name, status="done", finished_at=now_iso(), metrics=row)
             log.info(f"[{run_name}] 완료. best mAP50-95={row.get('best_map50_95')}")
+            if dataset_root.exists():
+                shutil.rmtree(dataset_root, ignore_errors=True)
+                log.info(f"[{run_name}] 임시 데이터셋 삭제 완료 (디스크 확보)")
         except Exception as e:
             log.error(f"[{run_name}] 실패: {e}")
             log.error(traceback.format_exc())
             state.set(run_name, status="failed", finished_at=now_iso(), error=str(e))
-        finally:
-            if dataset_root.exists():
-                shutil.rmtree(dataset_root, ignore_errors=True)
-                log.info(f"[{run_name}] 임시 데이터셋 삭제 완료 (디스크 확보)")
+            log.info(f"[{run_name}] 임시 데이터셋은 재개(resume)를 위해 보존함 ({dataset_root})")
 
     done = sum(1 for r in state.all_runs().values() if r.get("status") == "done")
     failed = sum(1 for r in state.all_runs().values() if r.get("status") == "failed")

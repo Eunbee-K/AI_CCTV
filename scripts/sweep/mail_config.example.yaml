@@ -16,3 +16,9 @@ recipient_email: "recipient@example.com"
 # 인터넷 연결 확인 주기(초). mailer.py --interval 로 실행 시 넘기면 그 값이 우선.
 # 모든 run이 끝나기 전까지는 이 주기와 무관하게 대기만 하고, 끝난 뒤부터 이 주기로 확인함.
 check_interval_sec: 10800
+
+# 메일에 새로 완료된 run의 weights/best.pt를 자동 첨부할 때, 파일 하나당 허용하는
+# 최대 용량(MB). Gmail 등 SMTP 서버는 보통 메일 전체 용량을 25MB로 제한하므로,
+# 이보다 큰 best.pt(예: yolo11l/m 계열)는 자동으로 첨부에서 빠지고 로그에만 경고가
+# 남는다 — 그런 경우 결과 폴더에서 직접 파일을 가져올 것.
+max_weight_attachment_mb: 20

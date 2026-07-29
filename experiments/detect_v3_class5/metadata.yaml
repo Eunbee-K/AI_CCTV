@@ -1,0 +1,55 @@
+experiment_group: detect_v3_class5
+date: 2026-07-10
+task: detect
+model: yolo11l.pt
+
+dataset:
+  status: workstation_only
+  workstation_path: /home/workstation/ai_cctv/legacy/260710_TEST3/dataset
+  local_path: null
+  intended_classes:
+    - BK
+    - LP
+    - JF
+    - JD
+    - DS
+  class_mapping: null
+  train_images: 80000
+  val_images: 10000
+  test_images: null
+  source_manifest: null
+  note: >-
+    실험명에 16000이 포함되어 있으나 실제 train 80000 / val 10000장 확인됨
+    (클래스 5종 x 각 16000장 기준 명명으로 추정).
+
+training:
+  imgsz: 960
+  configured_epochs: 50
+  completed_epochs: 42
+  stopped_reason: manual_stop_after_folder_reorg_interruptions
+  batch: 4
+  cache: false
+  cos_lr: true
+  device: 0
+
+result:
+  name: test3_yolo11L_class5_16000
+  path: E:/AI_CCTV_RESULTS/detect_v3_class5/test3_yolo11L_class5_16000
+  best_epoch: 35
+  best_precision: 0.7229
+  best_recall: 0.72803
+  best_map50: 0.75946
+  best_map50_95: 0.57022
+  final_epoch: 42
+  final_map50: 0.7505
+  final_map50_95: 0.56844
+  val_rerun_precision: 0.72055
+  val_rerun_recall: 0.73089
+  val_rerun_map50: 0.75949
+  val_rerun_map50_95: 0.57009
+  per_class_map50_val_rerun:
+    BK: 0.600
+    LP: 0.939
+    JF: 0.495
+    JD: 0.822
+    DS: 0.942

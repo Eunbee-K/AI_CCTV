@@ -39,6 +39,36 @@ def count_result_rows(summary_csv_path: Path) -> int:
         return sum(1 for _ in csv.reader(f)) - 1  # 헤더 제외
 
 
+def get_new_run_names(summary_csv_path: Path, since_count: int) -> list:
+    """summary_csv에서 이전 발송 시점(since_count번째 행) 이후 새로 추가된 run_name들."""
+    with open(summary_csv_path, "r", encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f))
+    return [r["run_name"] for r in rows[since_count:]]
+
+
+def find_best_weights(results_root: Path, sweep_name: str, run_names: list, max_mb: float, log) -> list:
+    """새로 완료된 run들의 best.pt 경로를 모은다.
+
+    Gmail 등 SMTP 서버의 첨부 용량 제한(보통 총 25MB) 대응으로, 파일이
+    max_mb를 넘으면 첨부에서 빼고 로그로만 경고한다 (표 발송 자체는 막지 않음).
+    """
+    found = []
+    for run_name in run_names:
+        best_pt = results_root / sweep_name / run_name / "weights" / "best.pt"
+        if not best_pt.exists():
+            log.warning(f"[{run_name}] best.pt 없음 -> 첨부 스킵")
+            continue
+        size_mb = best_pt.stat().st_size / (1024 * 1024)
+        if size_mb > max_mb:
+            log.warning(
+                f"[{run_name}] best.pt {size_mb:.1f}MB > 제한 {max_mb}MB -> 첨부 스킵 "
+                f"(결과 폴더에서 직접 확인: {best_pt})"
+            )
+            continue
+        found.append((run_name, best_pt))
+    return found
+
+
 def load_mail_state(path: Path) -> dict:
     if path.exists():
         with open(path, "r", encoding="utf-8") as f:
@@ -46,15 +76,23 @@ def load_mail_state(path: Path) -> dict:
     return {"last_sent_count": 0, "last_sent_at": None}
 
 
-def send_report(mail_cfg: dict, sweep_name: str, attachment_path: Path, row_count: int) -> None:
+def send_report(mail_cfg: dict, sweep_name: str, attachment_path: Path, row_count: int, weight_paths: list = None) -> None:
+    weight_paths = weight_paths or []
+
     msg = EmailMessage()
     msg["Subject"] = f"[AI_CCTV] {sweep_name} 스윕 결과 ({row_count}건 완료)"
     msg["From"] = mail_cfg["sender_email"]
     msg["To"] = mail_cfg["recipient_email"]
+
+    if weight_paths:
+        weight_note = "첨부된 가중치: " + ", ".join(f"{name}_best.pt" for name, _ in weight_paths)
+    else:
+        weight_note = "이번에 첨부된 가중치 없음 (용량 제한에 걸렸거나 새로 완료된 run이 없음 — 로그 참고)"
     msg.set_content(
         f"{sweep_name} 스윕 자동 실행 결과입니다.\n"
         f"현재까지 완료된 run: {row_count}건\n"
-        f"전송 시각: {now_iso()}\n\n"
+        f"전송 시각: {now_iso()}\n"
+        f"{weight_note}\n\n"
         f"첨부된 표에서 imgsz/epochs/batch별 mAP50, mAP50-95 등을 확인하세요."
     )
 
@@ -64,6 +102,14 @@ def send_report(mail_cfg: dict, sweep_name: str, attachment_path: Path, row_coun
     else:
         maintype, subtype = "text", "csv"
     msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=attachment_path.name)
+
+    for run_name, weight_path in weight_paths:
+        msg.add_attachment(
+            weight_path.read_bytes(),
+            maintype="application",
+            subtype="octet-stream",
+            filename=f"{run_name}_best.pt",
+        )
 
     context = ssl.create_default_context()
     with smtplib.SMTP_SSL(mail_cfg["smtp_host"], mail_cfg["smtp_port"], context=context) as server:
@@ -99,15 +145,21 @@ def try_send_if_ready(cfg: dict, mail_cfg: dict, mail_state_path: Path, log) -> 
         return False
 
     mail_state = load_mail_state(mail_state_path)
-    if row_count <= mail_state.get("last_sent_count", 0):
-        log.info(f"새로 보낼 결과 없음 (이미 {mail_state['last_sent_count']}건 전송함) -> 대기")
+    last_sent_count = mail_state.get("last_sent_count", 0)
+    if row_count <= last_sent_count:
+        log.info(f"새로 보낼 결과 없음 (이미 {last_sent_count}건 전송함) -> 대기")
         return False
 
     xlsx_path = summary_csv.with_suffix(".xlsx")
     attachment = report.build_excel_summary(summary_csv, xlsx_path)
 
-    log.info(f"인터넷 연결 확인됨, 새 결과 {row_count}건 발견 -> 메일 발송 시도")
-    send_report(mail_cfg, cfg["sweep_name"], Path(attachment), row_count)
+    results_root = Path(cfg["workspace"]["results_root"])
+    new_run_names = get_new_run_names(summary_csv, last_sent_count)
+    max_mb = mail_cfg.get("max_weight_attachment_mb", 20)
+    weight_paths = find_best_weights(results_root, cfg["sweep_name"], new_run_names, max_mb, log)
+
+    log.info(f"인터넷 연결 확인됨, 새 결과 {row_count}건 발견 (가중치 {len(weight_paths)}개 첨부 대상) -> 메일 발송 시도")
+    send_report(mail_cfg, cfg["sweep_name"], Path(attachment), row_count, weight_paths)
 
     mail_state["last_sent_count"] = row_count
     mail_state["last_sent_at"] = now_iso()

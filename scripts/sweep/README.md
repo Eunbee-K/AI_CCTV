@@ -9,7 +9,7 @@
 |---|---|
 | `label_formats.py` | 전역 결함 class id 매핑 + 전역 id YOLO txt를 실험별 로컬 class_id로 리매핑 |
 | `collect_dataset.py` | 외장하드 원본에서 지정 클래스만 골라 클래스별 정확한 수량(quota)으로 임시 데이터셋 생성 (`scan` / `materialize`) |
-| `run_sweep.py` | run마다 데이터셋 생성 → 학습 → 결과 기록 → 데이터셋 삭제를 반복 |
+| `run_sweep.py` | run마다 데이터셋 생성 → 학습 → 결과 기록 → 데이터셋 삭제(성공 시)를 반복. 중단된 run은 `last.pt`로 이어서 재개 |
 | `report.py` | `results.csv` 파싱, 누적 CSV/엑셀 요약표 생성 |
 | `mailer.py` | 모든 run이 끝난 뒤부터 인터넷 연결을 주기적으로 확인, 연결되면 요약표 이메일 발송 |
 | `common.py` | 설정/상태 파일, 로깅 공용 유틸 |
@@ -32,7 +32,7 @@ XML(S20)/LabelMe JSON(S22)이었던 서울시 데이터는 전량 전역 class i
   이미지/라벨 폴더를 직접 지정하는 `type: dir_pair`
   (`{type: dir_pair, images: "...", labels: "..."}`)로 쓴다. 라벨 리매핑은
   class id 뒤 토큰(폴리곤 좌표)을 그대로 보존하므로 bbox와 같은 코드로 처리된다.
-  seg 학습은 `model`만 `yolo11l-seg.pt`로 바꾸면 된다 (`test4_seg.example.yaml` 참고).
+  seg 학습은 `model`만 `yolo11l-seg.pt`로 바꾸면 된다 (`test4_seg.yaml` 참고).
   서울시 seg 원본(`rename_data_s20_s22_seg`)은 아직 XML/JSON 미변환이라 스윕에서
   사용하지 않는다.
 
@@ -66,24 +66,27 @@ IN:
 3. 외장하드를 워크스테이션에 마운트하고 `rename_data_s20_s22_bbox`와
    `aihub_data_bbox`가 같이 있는 상위 경로(`external_root`) 확인
 
-## 1단계 — 설정 파일 만들기
+## 1단계 — 설정 파일
 
-`test3_18class.example.yaml`(bbox 18클래스) / `test4_seg.example.yaml`(seg 8클래스+배경)
-을 복사해서 쓴다.
+`configs/sweeps/`에 실제로 쓰는 설정 파일 4개가 이미 있다 (전부 이 워크스테이션
+로컬 경로로 채워진 상태 — `external_root`는 로컬에 복사해둔 `AI_CCTV_DATASET`,
+`model`은 `pretrained_models/`). 새 실험이 필요하면 이 중 하나를 복사해서 고쳐 쓰면 된다.
+
+| 파일 | 용도 | 규모 |
+|---|---|---|
+| `test3_18class_20h_260729.yaml` | 2026-07-29 실행, bbox 18클래스 파이프라인 검증(20h 예산의 절반, seg와 이어 돌림) | train 53,000장 |
+| `test3_18class.yaml` | bbox 18클래스 본학습 | train 134,000장 (클래스당 최대 12,000) |
+| `test4_seg_20h_260729.yaml` | 2026-07-29 실행, seg 파이프라인 검증(20h 예산의 절반, bbox와 이어 돌림) | train 14,300장 |
+| `test4_seg.yaml` | seg 8클래스+배경 본학습 | train 22,000장 (가용 seg 데이터 전량) |
+
+날짜가 붙은 `_260729` 파일들은 그날 실행한 검증용 스윕의 이력 기록이다 — 다음에 같은
+성격의 검증을 또 돌리려면 새 날짜로 복사해서 쓸 것 (예: `test3_18class_20h_260805.yaml`).
+
+`mail_config.yaml`이 없으면 `scripts/sweep/mail_config.example.yaml`을 복사해서 만든다:
 
 ```bash
-cp configs/sweeps/test3_18class.example.yaml configs/sweeps/test3_18class.yaml
-cp configs/sweeps/test4_seg.example.yaml configs/sweeps/test4_seg.yaml
 cp scripts/sweep/mail_config.example.yaml scripts/sweep/mail_config.yaml
 ```
-
-`test3_18class.yaml`에서 최소한 아래는 실제 환경에 맞게 고칠 것:
-
-- `dataset.external_root` — 외장하드 실제 마운트 경로 (`rename_data_s20_s22_bbox`,
-  `aihub_data_bbox`의 공통 상위 폴더)
-- `workspace.dataset_root` / `results_root` / `summary_csv` — 워크스테이션 로컬 디스크 경로
-- `model` — 로컬에 미리 받아둔 가중치 경로
-- `runs` — 돌리고 싶은 imgsz/epochs/batch 조합
 
 `mail_config.yaml`에는 Gmail 앱 비밀번호를 넣는다 (일반 로그인 비밀번호 아님).
 Google 계정 → 보안 → 2단계 인증 → 앱 비밀번호에서 발급.
@@ -121,10 +124,15 @@ nohup python run_sweep.py \
 - run 하나가 실패해도 스윕 전체가 멈추지 않고 다음 run으로 넘어간다.
 - 워크스테이션이 재부팅되거나 프로세스가 죽었다 다시 실행해도, 이미 `done`인
   run은 건너뛰고 이어서 진행한다 (`run_sweep.py`를 그대로 다시 실행하면 됨).
-- run마다 임시 데이터셋(`workspace.dataset_root/<run_name>`)은 학습이 끝나면
-  성공/실패 상관없이 자동 삭제된다. test3 규모(train만 약 13만 4천장)는 디스크를
-  꽤 쓰니 `workspace.dataset_root`가 여유 있는 디스크를 가리키는지 확인할 것.
-- 데이터셋은 삭제돼도, 그 run에 실제로 어떤 원본 파일을 썼는지는
+  `done`이 아닌 채로 중단된 run은 `<results_root>/<sweep_name>/<run_name>/weights/last.pt`가
+  남아 있으면 그 지점부터 학습을 이어서 재개한다(ultralytics `resume=True`) — 그래서
+  `last.pt`는 학습이 끝난 뒤에도 지우지 않고 그대로 둔다.
+- run마다 임시 데이터셋(`workspace.dataset_root/<run_name>`)은 **run이 성공적으로
+  끝난 경우에만** 자동 삭제된다. 실패/중단된 run의 데이터셋은 재개 시 다시 복사하지
+  않도록 그대로 남겨둔다 (재개가 끝나 `done`이 되면 그때 삭제됨). test3 규모(train만
+  약 13만 4천장)는 디스크를 꽤 쓰니 `workspace.dataset_root`가 여유 있는 디스크를
+  가리키는지 확인할 것.
+- 데이터셋이 삭제돼도, 그 run에 실제로 어떤 원본 파일을 썼는지는
   `<results_root>/<sweep_name>/<run_name>/used_files.csv`에 영구히 남는다
   (컬럼: `split, class, source_kind, source_path, dest_filename` — 외장하드
   원본 경로 기준). `materialize_manifest.json`(장수/박스 수 집계)도 같은
@@ -147,6 +155,12 @@ nohup python mailer.py \
 - 완료된 뒤부터 3시간(기본값, `mail_config.yaml`의 `check_interval_sec`)마다 인터넷
   연결 여부를 확인하고, 연결돼 있으면 전체 요약표(`sweep_summary.csv` → 가능하면
   `.xlsx`)를 `mail_config.yaml`의 `recipient_email`로 보낸다.
+- 요약표와 함께, **직전 발송 이후 새로 완료된 run들의 `weights/best.pt`도 자동
+  첨부**된다(파일명 `<run_name>_best.pt`). 파일 하나가 `mail_config.yaml`의
+  `max_weight_attachment_mb`(기본 20MB, Gmail 총 25MB 제한 대응)를 넘으면 그
+  run의 가중치만 첨부에서 빠지고 메일 본문/로그에 경고가 남는다 — 그런 경우
+  결과 폴더(`<results_root>/<sweep_name>/<run_name>/weights/best.pt`)에서 직접
+  가져올 것.
 - `--interval <초>`로 확인 주기를 CLI에서 덮어쓸 수 있다.
 - 지금 막 워크스테이션을 인터넷에 연결했고 바로 결과를 받고 싶다면 (스윕이 아직
   안 끝났어도 대기 없이 즉시 한 번 확인):

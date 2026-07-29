@@ -1,0 +1,77 @@
+# test4_seg_20h_260729 — 2026-07-29 실행한 seg 파이프라인 검증용 스윕.
+# test4_seg.yaml(본학습, 가용 seg 라벨 데이터 100% 사용)의 65%로 줄였다 —
+# 같은 날 이어서 돌리는 test3_18class_20h_260729.yaml(역시 65% 축소)과
+# 합쳐서 20시간 예산에 맞추기 위함(둘 다 안 줄이면 약 29시간, bbox만 줄이면
+# 형평이 안 맞아서 둘 다 균등하게 축소).
+#
+# 클래스 선정 기준은 test4_seg.yaml과 동일 (자세한 내용은 그쪽 주석 참고).
+# 처리량은 bbox 실측치(56.2 img/s)의 절반(28 img/s)으로 보수적으로 잡음:
+# train 14,286장 x 50epoch / 28 img/s ≈ 25,510초 ≈ 7.1시간
+# (+ test3_18class_20h_260729.yaml 약 13.1시간 = 합계 약 20.2시간)
+
+sweep_name: test4_seg_20h_260729_sweep01
+
+dataset:
+  external_root: /home/workstation/ai_cctv/AI_CCTV_DATASET/original
+  split_seed: 42
+
+  classes:
+    CL:
+      quota: {train: 2077, val: 260, test: 260}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-1-1.균열-길이(Crack-Longitudinal,CL)", labels: "aihub_data_seg/labels/CL"}
+    CC:
+      quota: {train: 1555, val: 195, test: 195}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-1-2.균열-원주(Crack-Circumferential,CC)", labels: "aihub_data_seg/labels/CC"}
+    SD:
+      quota: {train: 1559, val: 195, test: 195}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-2.표면손상(Surface-Damage,SD)", labels: "aihub_data_seg/labels/SD"}
+    BK:
+      quota: {train: 1559, val: 195, test: 195}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-3.파손(Broken-Pipe,BK)", labels: "aihub_data_seg/labels/BK"}
+    LP:
+      quota: {train: 1559, val: 195, test: 195}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-4.연결관-돌출(Lateral-Protruding,LP)", labels: "aihub_data_seg/labels/LP"}
+    JF:
+      quota: {train: 1558, val: 195, test: 195}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-5.이음부-손상(Joint-Faulty,JF)", labels: "aihub_data_seg/labels/JF"}
+    JD:
+      quota: {train: 1560, val: 195, test: 195}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-6.이음부-단차(Joint-Displaced,JD)", labels: "aihub_data_seg/labels/JD"}
+    DS:
+      quota: {train: 1559, val: 195, test: 195}
+      sources:
+        - {type: dir_pair, images: "aihub_data_seg/image/1-7.토사퇴적(Deposits-Silty,DS)", labels: "aihub_data_seg/labels/DS"}
+    PJ:
+      background: true
+      quota: {train: 650, val: 98, test: 98}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: PJ}
+    IN:
+      background: true
+      quota: {train: 650, val: 98, test: 98}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: IN}
+
+workspace:
+  dataset_root: /home/workstation/ai_cctv/_sweep_workspace/dataset
+  results_root: /home/workstation/ai_cctv/_sweep_workspace/results
+  summary_csv: /home/workstation/ai_cctv/_sweep_workspace/sweep_summary.csv
+
+model: /home/workstation/ai_cctv/pretrained_models/yolo11l-seg.pt
+device: 0
+cache: false
+cos_lr: true
+patience: 30
+
+runs:
+  - name: test4seg_20h_260729_960_e50
+    imgsz: 960
+    epochs: 50
+    batch: -1

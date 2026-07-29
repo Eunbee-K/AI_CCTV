@@ -4,16 +4,13 @@
 # 장수만큼 서울시(S20/S22, YOLO txt로 preconvert 완료) + AI Hub(이미 YOLO txt)
 # 두 소스에서 모아서 학습용 데이터셋을 만든다.
 #
-# 실제로 쓸 때는 이 파일을 복사해서(예: test3_18class.yaml) 워크스테이션
-# 환경에 맞게 workspace 경로들을 수정한 뒤 사용할 것.
+# 워크스테이션 로컬 디스크에 AI_CCTV_DATASET/original 전체를 복사해두고
+# 쓰는 구성 (외장하드를 뽑아도 그대로 동작).
 
 sweep_name: test3_18class_sweep01
 
 dataset:
-  # 워크스테이션에 마운트된 외장하드에서, E:/AI_CCTV_DATASET/original 에
-  # 해당하는 경로로 수정할 것. rename_data_s20_s22_bbox와 aihub_data_bbox가
-  # 둘 다 이 경로 아래에 있어야 한다.
-  external_root: /mnt/external_hdd/AI_CCTV_DATASET/original
+  external_root: /home/workstation/ai_cctv/AI_CCTV_DATASET/original
   split_seed: 42
 
   # 클래스마다: quota(정확히 몇 장 쓸지) + sources(어디서 모을지).
@@ -121,13 +118,13 @@ dataset:
         - {type: yolo_txt, path: "aihub_data_bbox", code: IN}
 
 workspace:
-  # 매 run 시작 전에 여기에 데이터셋을 만들었다가, run이 끝나면(성공/실패
-  # 상관없이) 삭제한다. test3는 train만 약 134,000장이라 용량을 꽤 쓰니
-  # 워크스테이션 로컬 디스크 중 여유 있는 경로로 지정할 것.
+  # 매 run 시작 전에 여기에 데이터셋을 만들었다가, run이 성공적으로 끝나면
+  # 삭제한다 (실패/중단된 run은 재개를 위해 남겨둠). test3는 train만 약
+  # 134,000장이라 용량을 꽤 쓰니 워크스테이션 로컬 디스크 중 여유 있는
+  # 경로로 지정할 것.
   dataset_root: /home/workstation/ai_cctv/_sweep_workspace/dataset
   results_root: /home/workstation/ai_cctv/_sweep_workspace/results
   summary_csv: /home/workstation/ai_cctv/_sweep_workspace/sweep_summary.csv
-  keep_last_weight: false
 
 # 워크스테이션에 이미 받아둔 로컬 가중치 경로 (오프라인이라 자동 다운로드 불가).
 model: /home/workstation/ai_cctv/pretrained_models/yolo11l.pt
