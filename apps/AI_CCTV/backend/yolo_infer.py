@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from .config import YOLO_CONF, YOLO_IGNORE_CLASSES, YOLO_IMGSZ, YOLO_MODEL_PATH, YOLO_CLASS_MAP
+from .overlay_filter import is_overlay_text_box
 
 try:
     from ultralytics import YOLO
@@ -62,6 +63,7 @@ def call_yolo(model, frames: List[Path]) -> Tuple[list, str]:
             continue
 
         names = getattr(pred, "names", {}) or getattr(model, "names", {}) or {}
+        oh, ow = getattr(pred, "orig_shape", (0, 0))
         for box in boxes:
             try:
                 cls_id = int(box.cls[0])
@@ -70,9 +72,13 @@ def call_yolo(model, frames: List[Path]) -> Tuple[list, str]:
                 if _normalize_yolo_class_name(raw_name) in YOLO_IGNORE_CLASSES:
                     continue
 
+                xyxy = [float(v) for v in box.xyxy[0].tolist()]
+                # 화면 자막(거리/현장명/위경도 등) 위치의 오탐 제외
+                if is_overlay_text_box(xyxy, ow, oh):
+                    continue
+
                 label = _yolo_display_label(raw_name)
                 defects.add(label)
-                xyxy = [float(v) for v in box.xyxy[0].tolist()]
                 boxes_out.append({
                     "class_id": cls_id,
                     "class_name": raw_name,

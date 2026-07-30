@@ -29,6 +29,27 @@
         <span id="lblTime" class="time-label">00:00</span>
       </div>
 
+      <div class="list-card" id="colabCard">
+        <div class="list-header">
+          <span class="list-title">추론 서버 (Colab)</span>
+          <span id="colabStatus" class="status">미연결</span>
+        </div>
+        <div class="colab-steps">
+          <div class="colab-row">
+            <span class="colab-step">① 노트북 실행</span>
+            <!-- ▼▼▼ 여기 href="" 안에 본인 Colab 노트북 공유 링크를 넣으세요 (지금은 공란) ▼▼▼ -->
+            <a id="colabOpen" class="clean-btn" href="" target="_blank" rel="noopener">Colab 열기</a>
+            <!-- ▲▲▲ 예: href="https://colab.research.google.com/drive/xxxxxxxx" ▲▲▲ -->
+          </div>
+          <div class="colab-row">
+            <span class="colab-step">② 추론주소 연결</span>
+            <input type="text" id="remoteUrl" class="colab-url"
+                   placeholder="Colab에서 나온 ngrok 주소 붙여넣기" />
+            <button id="btnConnectRemote" class="clean-btn">연결</button>
+          </div>
+        </div>
+      </div>
+
       <div class="list-card">
         <div class="list-header">
           <span class="list-title">분석 대기 영상</span>
@@ -47,6 +68,11 @@
     </section>
 
     <section class="right-panel">
+      <div class="user-bar" id="userBar" hidden>
+        <span class="user-badge" id="userBadge"></span>
+        <button id="btnLogout" class="clean-btn">로그아웃</button>
+      </div>
+
       <div class="in-card">
         <label for="siteName">현장명</label>
         <input type="text" id="siteName" />

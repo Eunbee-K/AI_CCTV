@@ -4,7 +4,18 @@ from typing import List, Optional, Tuple
 import requests
 
 from .config import YOLO_CONF, YOLO_IGNORE_CLASSES, YOLO_IMGSZ
+from .overlay_filter import is_overlay_text_box
 from .yolo_infer import _normalize_yolo_class_name, _yolo_display_label
+
+
+def _image_size(fp: Path):
+    """프레임 크기(w, h)를 픽셀 디코딩 없이 헤더에서만 읽는다. 실패 시 (0, 0)."""
+    try:
+        from PIL import Image
+        with Image.open(fp) as im:
+            return im.size  # (w, h)
+    except Exception:
+        return (0, 0)
 
 REMOTE_TIMEOUT_S = 180
 # 한 요청에 보내는 프레임 수. 전체(수백 장)를 한 번에 보내면 Colab 쪽에서
@@ -71,11 +82,15 @@ def call_yolo_remote(frames: List[Path], remote_url: str) -> Tuple[list, Optiona
         if not r:
             continue
 
+        img_w, img_h = _image_size(fp)
         defects = set()
         boxes_out = []
         for box in r.get("boxes", []):
             raw_name = str(box.get("class_name", ""))
             if _normalize_yolo_class_name(raw_name) in YOLO_IGNORE_CLASSES:
+                continue
+            # 화면 자막(거리/현장명/위경도 등) 위치의 오탐 제외
+            if is_overlay_text_box(box.get("xyxy"), img_w, img_h):
                 continue
             label = _yolo_display_label(raw_name)
             defects.add(label)

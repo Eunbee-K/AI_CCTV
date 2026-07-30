@@ -39,6 +39,12 @@ export const api = {
 
   exportExcel: (path) => req("POST", "/api/export/excel", { path }),
 
+  getRemoteUrl: () => req("GET", "/api/config/remote_yolo_url"),
+  setRemoteUrl: (url) => req("POST", "/api/config/remote_yolo_url", { url }),
+
+  authMe: () => req("GET", "/api/auth/me"),
+  logout: () => req("POST", "/api/auth/logout"),
+
   previewFrameUrl: (name, t) =>
     `/api/preview/frame?name=${encodeURIComponent(name)}&t=${t}`,
   previewStreamUrl: (name, startT, speed = 1) =>

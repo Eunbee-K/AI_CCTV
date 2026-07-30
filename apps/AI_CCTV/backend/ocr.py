@@ -24,11 +24,14 @@ def get_paddleocr_reader():
     try:
         from paddleocr import PaddleOCR
         _PADDLEOCR_READER = PaddleOCR(
-            lang="korean",
             # 기본값인 server급 감지 모델(PP-OCRv5_server_det)은 MKLDNN이 꺼진
             # 이 환경의 CPU에서 호출당 30초 이상 걸린다. 오버레이 자막처럼
             # 크고 선명한 텍스트에는 mobile 감지로 충분하고 수십 배 빠르다.
             text_detection_model_name="PP-OCRv5_mobile_det",
+            # 주의: PaddleOCR 3.x는 model_name을 지정하면 lang="korean"을 무시하고
+            # 기본(비한글) 인식 모델을 로드한다. 그러면 현장명/조사시작 등 한글이
+            # 전부 빈 문자열로 나온다. 반드시 한글 인식 모델을 명시해야 한다.
+            text_recognition_model_name="korean_PP-OCRv5_mobile_rec",
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
@@ -130,16 +133,21 @@ def _parse_distance_from_text(text: str) -> str:
     s = _clean_ocr_text(text)
     s = s.replace(",", ".").replace("O", "0").replace("o", "0")
 
+    # 화면 중앙의 이동속도 표시("x.x m/min")는 거리와 형식이 같아 혼동된다.
+    # 거리로 오인하지 않도록 먼저 제거한다.
+    s = re.sub(r'\d{1,6}\.\d{1,2}\s*(?:m|M|ｍ|Ｍ)?\s*/?\s*min', ' ', s, flags=re.IGNORECASE)
+
+    # 거리는 좌상단(가장 왼쪽/위)에 표시되므로 첫 번째 매치를 사용한다.
     with_unit = re.findall(
         r'(?<![\dA-Za-z])(\d{1,6}\.\d{1,2})\s*(?:m|M|ｍ|Ｍ)\b',
         s
     )
     if with_unit:
-        return with_unit[-1] + "m"
+        return with_unit[0] + "m"
 
     without_unit = re.findall(r'(?<![\dA-Za-z])(\d{1,6}\.\d{1,2})(?![\dA-Za-z])', s)
     if without_unit:
-        return without_unit[-1] + "m"
+        return without_unit[0] + "m"
 
     return ""
 
@@ -155,16 +163,24 @@ def _parse_pipe_id_from_text(text: str) -> str:
 
 def _parse_diameter_from_text(text: str) -> str:
     s = _clean_ocr_text(text).replace("O", "0").replace("o", "0")
-    patterns = [
-        r'[ΦØ]\s*(\d{2,4})',
-        r'파이\s*(\d{2,4})',
-        r'(?:관경|구경|DIA|Diameter|D)\s*[:：=\-]?\s*(\d{2,4})\s*(?:mm|㎜)?',
-        r'(\d{2,4})\s*(?:mm|㎜)',
-    ]
-    for pat in patterns:
-        m = re.search(pat, s, flags=re.IGNORECASE)
-        if m:
-            return f"Φ{m.group(1)}"
+
+    # 우상단 날짜(2024-10-24)·시간(10:46:49)이 관경 숫자로 오인되지 않도록 먼저 제거.
+    s = re.sub(r'\d{4}\s*[-.\s]\s*\d{1,2}\s*[-.\s]\s*\d{1,2}', ' ', s)
+    s = re.sub(r'\d{1,2}\s*[:：]\s*\d{1,2}(?:\s*[:：]\s*\d{1,2})?', ' ', s)
+
+    material = r'(?:PVC|PE|VG|PC|흄관|흄|오수|우수|하수|합류)'
+    # 1) 재질/관종 바로 앞의 3자리(관경). 사이 잡음(공백/오인된 1 등) 허용.
+    m = re.search(rf'(\d{{3}})[\s\d/·|!lIi]{{0,4}}{material}', s, flags=re.IGNORECASE)
+    if m:
+        return f"Φ{m.group(1)}"
+    # 2) Φ/Ø 기호 뒤 3자리.
+    m = re.search(r'[ΦØ]\s*(\d{3})', s)
+    if m:
+        return f"Φ{m.group(1)}"
+    # 3) 그 외 독립된 3자리(4자리 연도는 경계 조건으로 자동 배제).
+    m = re.search(r'(?<!\d)(\d{3})(?!\d)', s)
+    if m:
+        return f"Φ{m.group(1)}"
     return ""
 
 
@@ -209,14 +225,15 @@ def ocr_overlay_metadata(frames: List[Path]) -> dict:
     if im is None:
         return empty
 
-    top_left_text = _ocr_region(im, 0.00, 0.24, 0.00, 0.45)
+    top_left_text = _ocr_region(im, 0.00, 0.24, 0.00, 0.30)
     bottom_left_text = _ocr_region(im, 0.68, 1.00, 0.00, 0.55)
-    all_text = " ".join([top_left_text, bottom_left_text, _ocr_region(im, 0.00, 1.00, 0.00, 1.00, upscale=1.0)])
+    right_text = _ocr_region(im, 0.06, 0.22, 0.55, 1.00)  # 관경/재질/관종 라인(우상단)
+    all_text = " ".join([top_left_text, bottom_left_text, right_text, _ocr_region(im, 0.00, 1.00, 0.00, 1.00, upscale=1.0)])
 
     return {
         "distance_text": _parse_distance_from_text(top_left_text),
         "pipe_id": _parse_pipe_id_from_text(top_left_text),
-        "diameter_text": _parse_diameter_from_text(all_text),
+        "diameter_text": _parse_diameter_from_text(right_text) or _parse_diameter_from_text(all_text),
         "site_name": _parse_site_from_text(bottom_left_text),
     }
 
@@ -228,7 +245,7 @@ def ocr_distance_from_frame(frame_path: Path) -> str:
         im = _read_frame_image(frame_path)
         if im is None:
             return ""
-        top_left_text = _ocr_region(im, 0.00, 0.24, 0.00, 0.45)
+        top_left_text = _ocr_region(im, 0.00, 0.24, 0.00, 0.30)
         return _parse_distance_from_text(top_left_text)
     except Exception:
         return ""

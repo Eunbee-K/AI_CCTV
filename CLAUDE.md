@@ -60,6 +60,17 @@
 
 ## 최근 작업 로그
 
+### 2026-07-30 세션 — OCR 버그 수정 + 오탐 필터 + 웹 데모(로그인)
+**상세: [`apps/AI_CCTV/docs/WEB_DEMO.md`](apps/AI_CCTV/docs/WEB_DEMO.md) 먼저 읽을 것.** 요약:
+- `backend/ocr.py`: 한글 인식 복구(`text_recognition_model_name="korean_PP-OCRv5_mobile_rec"`
+  명시 — model_name 지정 시 `lang`이 무시되던 버그), 거리 판독(영역 0.30w + 속도 제외 파서,
+  37장 35%→94%), 관경 숫자 안정화(우측 재질라인 + 날짜/시간 제외).
+- `backend/overlay_filter.py`(신규) + `yolo_infer`/`yolo_remote`: 위도/경도 등 자막 오탐 제거.
+- 웹 데모: `serve_web.py`(신규, 로그인 ON) + `backend/auth.py`(신규) + `ui/login.html`(신규)
+  + "추론 서버(Colab)" 연결 패널. **`main.py`(exe)는 그대로, 로그인 없음.**
+- 실행: `AUTH_USERS="admin:비번" python serve_web.py --port 8000` → 브라우저 접속(로그인).
+- 미완(TODO): Colab 링크 채우기, 터널(cloudflared), 영상 업로드, 사용자별 상태격리, 구글 OAuth.
+
 ### 2026-07-29 ~ 2026-07-24 세션에서 한 일
 
 1. **Segmentation 라벨 변환 상태 점검** (`AI_CCTV_DATASET/original/aihub_data_seg/labels`)

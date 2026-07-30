@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>로그인 · AI CCTV 결함 분석기</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
+      font-family: "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+      background: linear-gradient(135deg, #1f2937 0%, #111827 100%); color: #e5e7eb;
+    }
+    .login-box {
+      width: 340px; padding: 32px 28px; background: #fff; color: #1f2937;
+      border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.35);
+    }
+    .brand { font-size: 20px; font-weight: 700; margin: 0 0 4px; }
+    .sub { font-size: 12px; color: #6b7280; margin: 0 0 22px; }
+    label { display: block; font-size: 12px; color: #374151; margin: 14px 0 6px; }
+    input {
+      width: 100%; padding: 11px 12px; border: 1px solid #d1d5db; border-radius: 8px;
+      font-size: 14px; outline: none;
+    }
+    input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+    button {
+      width: 100%; margin-top: 22px; padding: 12px; border: 0; border-radius: 8px;
+      background: #2563eb; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+    .err { color: #dc2626; font-size: 12px; margin-top: 12px; min-height: 16px; }
+    .hint { margin-top: 18px; font-size: 11px; color: #9ca3af; text-align: center; }
+  </style>
+</head>
+<body>
+  <form class="login-box" id="loginForm">
+    <p class="brand">AI CCTV 결함 분석기</p>
+    <p class="sub">승인된 계정으로 로그인하세요</p>
+    <label for="username">아이디</label>
+    <input type="text" id="username" name="username" autocomplete="username" autofocus />
+    <label for="password">비밀번호</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" />
+    <button type="submit">로그인</button>
+    <div class="err" id="err"></div>
+    <div class="hint">권한이 필요하면 관리자에게 문의하세요</div>
+  </form>
+  <script>
+    const form = document.getElementById("loginForm");
+    const err = document.getElementById("err");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      err.textContent = "";
+      const body = new FormData(form);
+      const res = await fetch("/api/auth/login", { method: "POST", body });
+      if (res.ok) {
+        window.location.href = "/";
+      } else {
+        let msg = "로그인 실패";
+        try { msg = (await res.json()).detail || msg; } catch (_) {}
+        err.textContent = msg;
+      }
+    });
+  </script>
+</body>
+</html>

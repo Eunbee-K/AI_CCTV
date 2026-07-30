@@ -126,6 +126,37 @@ async function init() {
     api.setSiteName(siteNameEl.value);
   });
 
+  // 로그인 사용자 표시 + 로그아웃 (웹 배포에서 AUTH_ENABLED=1일 때만 노출)
+  try {
+    const meRes = await api.authMe();
+    if (meRes.auth_enabled && meRes.user) {
+      document.getElementById("userBar").hidden = false;
+      document.getElementById("userBadge").textContent = "👤 " + meRes.user;
+    }
+  } catch (_) {}
+  document.getElementById("btnLogout").addEventListener("click", async () => {
+    try { await api.logout(); } catch (_) {}
+    window.location.href = "/login";
+  });
+
+  // Colab 추론 서버 연결 (링크는 index.html의 href="" 에 직접 넣어 사용)
+  const remoteInput = document.getElementById("remoteUrl");
+  const colabStatus = document.getElementById("colabStatus");
+  const setColabStatus = (url) => {
+    colabStatus.textContent = url ? "연결됨" : "미연결";
+    colabStatus.classList.toggle("ok", !!url);
+  };
+  try {
+    const r = await api.getRemoteUrl();
+    remoteInput.value = r.url || "";
+    setColabStatus(r.url);
+  } catch (_) {}
+  document.getElementById("btnConnectRemote").addEventListener("click", async () => {
+    const r = await api.setRemoteUrl(remoteInput.value.trim());
+    setColabStatus(r.url);
+    appendLog({ level: "info", msg: r.url ? `추론 서버 연결: ${r.url}` : "추론 서버 연결 해제 (로컬 추론)" });
+  });
+
   // 탭 전환 (결과표 / 통계)
   const tabBtns = [...document.querySelectorAll(".tab-btn")];
   tabBtns.forEach((btn) => {
