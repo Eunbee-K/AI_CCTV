@@ -18,7 +18,7 @@
 
 html, body {
   margin: 0;
-  height: 100%;
+  min-height: 100%;   /* height 고정이면 좁은 화면에서 아래쪽 내용이 잘린다 */
   background: var(--bg-app);
   color: var(--text-main);
   font-family: "Malgun Gothic", "맑은 고딕", sans-serif;
@@ -27,33 +27,91 @@ html, body {
 
 .app {
   display: grid;
-  grid-template-columns: 6fr 4fr;
-  gap: 20px;
+  /* 기본 1:1. 가운데 6px은 드래그 손잡이(스플리터). JS가 비율을 다시 써준다. */
+  grid-template-columns: 50fr 6px 50fr;
+  gap: 14px;
   padding: 20px;
   height: 100vh;
 }
 
+/* 좌우 비율 조절 손잡이 */
+.splitter {
+  position: relative;
+  background: var(--border);
+  border-radius: 3px;
+  cursor: col-resize;
+}
+
+.splitter::after {          /* 얇은 선은 잡기 어려워 실제 조작 영역을 넓힌다 */
+  content: "";
+  position: absolute;
+  inset: 0 -7px;
+}
+
+.splitter:hover { background: var(--accent); }
+
+/* 드래그 중에는 전체가 col-resize 커서로 고정되고 텍스트 선택이 안 되게 */
+body.splitting { cursor: col-resize; user-select: none; }
+body.splitting iframe, body.splitting img { pointer-events: none; }
+
+/* 각 패널이 독립적으로 스크롤된다. 내용이 화면보다 길어져도 서로 겹치지 않고,
+   아래쪽 로그/버튼이 잘려나가지 않는다. */
 .left-panel, .right-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;   /* 스크롤바가 내용 위에 겹치지 않도록 */
+}
+
+/* 좌(영상) / 우(결함 결과표) 2단 배치가 기본이다. 세로가 짧은 건 각 패널이
+   스크롤해서 해결하므로 높이로는 1단으로 접지 않는다. 가로가 정말 좁을 때만
+   (태블릿·세로 모니터) 1단으로 내린다. */
+@media (max-width: 820px) {
+  .app {
+    grid-template-columns: 1fr !important;   /* JS가 써넣은 인라인 비율보다 우선 */
+    height: auto;
+    min-height: 100vh;
+  }
+  .left-panel, .right-panel {
+    overflow: visible;
+  }
+  .splitter { display: none; }   /* 1단에서는 좌우 비율 개념이 없다 */
+  .video-card { min-height: 320px; }
 }
 
 .video-name {
+  flex: 0 0 auto;
   font-size: 16px;
   font-weight: bold;
   margin-bottom: 10px;
 }
 
 .video-card {
-  flex: 5;
+  position: relative;   /* 줌 배지 기준 */
+  flex: 5 1 auto;
   background: #000;
   border: 1px solid var(--border);
-  min-height: 0;
+  min-height: 240px;   /* 아래 카드들에 밀려 0으로 찌부러지지 않게 */
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+
+/* 현재 확대/축소 배율. 100%일 때는 숨긴다. */
+.zoom-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 2px 7px;
+  border-radius: 10px;
+  pointer-events: none;
 }
 
 .preview-img {
@@ -63,6 +121,7 @@ html, body {
 }
 
 .ctrl-frame {
+  flex: 0 0 auto;   /* 재생 컨트롤은 항상 원래 높이 유지 */
   display: flex;
   align-items: center;
   gap: 10px;
@@ -89,11 +148,19 @@ html, body {
 }
 
 .list-card {
-  flex: 2;
+  flex: 2 1 auto;
   background: var(--panel);
   border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  min-height: 120px;
+  margin-bottom: 10px;
+}
+
+/* Colab 연결 패널은 2줄짜리 고정 컨트롤이라 늘어나거나 줄어들면 안 된다.
+   (list-card의 flex를 그대로 물려받아 찌그러지던 것을 막는다) */
+#colabCard {
+  flex: 0 0 auto;
   min-height: 0;
 }
 
@@ -137,14 +204,67 @@ html, body {
   color: #1976D2;
 }
 
+/* ── 영상 업로드: 드롭존 + 진행률 ── */
+
+#queueCard { position: relative; transition: background 0.12s, border-color 0.12s; }
+
+#queueCard.drag-over {
+  border-color: var(--accent);
+  background: var(--highlight);
+}
+
+/* 끌어놓는 동안 자식 요소가 dragleave를 발생시켜 깜빡이는 것을 막는다 */
+#queueCard.drag-over * { pointer-events: none; }
+
+.drop-hint {
+  margin: 0 10px 10px;
+  padding: 14px 10px;
+  border: 1px dashed var(--btn-border);
+  border-radius: 6px;
+  color: var(--text-sub);
+  font-size: 12px;
+  text-align: center;
+}
+
+#queueCard.drag-over .drop-hint {
+  border-color: var(--accent);
+  color: #1976D2;
+}
+
+.upload-bar {
+  position: relative;
+  height: 20px;
+  margin: 0 10px 10px;
+  background: #E9ECEF;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.upload-bar-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
+
+.upload-bar-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
 .log-frame {
-  flex: 3;
+  flex: 3 1 auto;
   background: var(--log-bg);
   border: 1px solid #000;
   display: flex;
   flex-direction: column;
-  margin-top: 10px;
-  min-height: 0;
+  min-height: 140px;
 }
 
 .log-title {
@@ -170,11 +290,14 @@ html, body {
 .log-console .ts { color: #00FF00; }
 
 .in-card {
+  flex: 0 0 auto;
   background: var(--panel);
   border: 1px solid var(--border);
   padding: 15px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 15px;
 }
 
@@ -184,11 +307,37 @@ html, body {
 }
 
 .in-card input[type="text"] {
-  width: 220px;
+  width: 150px;
   border: 1px solid var(--btn-border);
   padding: 4px 6px;
   margin-right: 15px;
 }
+
+.in-card input[type="text"]:disabled {
+  background: #F1F3F5;
+  color: #999;
+}
+
+/* 관로 구분(신설/노후) — 둘 중 하나만 선택 */
+.cond-group {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-left: 4px;
+  border-left: 1px solid var(--border);
+}
+
+.cond-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--text-main);
+  margin-left: 8px;
+}
+
+.cond-item input { cursor: pointer; }
 
 .status {
   margin-left: auto;
@@ -197,11 +346,11 @@ html, body {
 }
 
 .tree-card {
-  flex: 1;
+  flex: 1 1 auto;
   background: var(--panel);
   border: 1px solid var(--border);
-  overflow: auto;
-  min-height: 0;
+  overflow: auto;      /* 결과표가 길어지면 표 안에서 스크롤 */
+  min-height: 200px;
 }
 
 #resultsTable {
@@ -217,6 +366,7 @@ html, body {
   padding: 6px 4px;
   position: sticky;
   top: 0;
+  z-index: 1;   /* 스크롤되는 행이 헤더 위로 올라오지 않게 */
 }
 
 #resultsTable td {
@@ -231,8 +381,18 @@ html, body {
 tr.row-odd { background: var(--row-odd); }
 tr.row-separator { background: #DDDDDD; font-weight: bold; }
 tr.row-separator td { text-align: left; padding-left: 8px; }
-tr.row-group-parent { background: #EEEFFF; }
-tr.row-child td:first-child { padding-left: 18px; }
+tr.row-group-parent { background: #EEEFFF; cursor: pointer; user-select: none; }
+
+/* 그룹 펼침/접힘 삼각형. 클릭/더블클릭/Enter 모두 같은 토글로 이어진다. */
+.group-caret {
+  display: inline-block;
+  width: 14px;
+  margin-right: 2px;
+  color: var(--accent);
+  font-size: 10px;
+}
+.group-caret:hover { color: #0b3fb8; }
+tr.row-in-group td:first-child { padding-left: 26px; }   /* 그룹에 딸린 행만 들여쓴다 */
 tr.row-selected { background: var(--highlight) !important; color: #1976D2; }
 tr.row-hidden { display: none; }
 
@@ -245,7 +405,9 @@ td input.cell-edit {
 }
 
 .act-frame {
+  flex: 0 0 auto;   /* 분석 실행/출력 버튼은 항상 보여야 한다 */
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 15px 0;
 }
@@ -301,6 +463,14 @@ td input.cell-edit {
   white-space: nowrap;
 }
 
+/* 박스가 화면 위쪽에 닿아 라벨을 위에 못 붙일 때(큰 박스) 안쪽으로 넣는다.
+   이게 없으면 신뢰도 숫자가 영상 밖으로 잘려서 안 보인다. */
+.det-label.inside {
+  bottom: auto;
+  top: 0;
+  left: 0;
+}
+
 /* ───────── 배속 버튼 ───────── */
 
 .speed-group {
@@ -328,6 +498,7 @@ td input.cell-edit {
 /* ───────── 탭 ───────── */
 
 .tab-bar {
+  flex: 0 0 auto;
   display: flex;
   gap: 0;
   border-bottom: 2px solid var(--accent);
@@ -362,6 +533,7 @@ td input.cell-edit {
 /* ───────── 필터 바 (신뢰도 + 클래스) ───────── */
 
 .filter-bar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -406,11 +578,8 @@ td input.cell-edit {
   text-decoration: none;
 }
 
-/* ───────── 오탐 / 필터 숨김 행 ───────── */
+/* ───────── 필터 숨김 행 ───────── */
 
-.col-fp { width: 36px; }
-tr.row-fp td { color: #BBB; text-decoration: line-through; }
-tr.row-fp td.col-fp { text-decoration: none; }
 tr.row-filtered { display: none; }
 
 /* ───────── 통계 탭 ───────── */
@@ -428,6 +597,7 @@ tr.row-filtered { display: none; }
   padding: 6px 8px;
   position: sticky;
   top: 0;
+  z-index: 1;
   border-bottom: 1px solid var(--border);
 }
 
@@ -456,6 +626,7 @@ tr.row-filtered { display: none; }
   border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px;
 }
 #colabStatus.ok { color: #16a34a; font-weight: 600; }
+#colabStatus.err { color: #dc2626; font-weight: 600; }
 
 /* ── 로그인 사용자 바 ── */
 .user-bar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-bottom: 6px; }

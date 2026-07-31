@@ -93,6 +93,8 @@ previewImg.addEventListener("load", () => {
 });
 window.addEventListener("resize", syncOverlayRect);
 
+const LABEL_H_PX = 16;   // .det-label의 대략적인 높이(폰트 11px + 패딩)
+
 function renderOverlay() {
   syncOverlayRect();
   const boxes = pinnedBoxes !== null ? pinnedBoxes : boxesAt(player.name, player.currentTime);
@@ -109,6 +111,10 @@ function renderOverlay() {
     div.style.height = `${(y2 - y1) * 100}%`;
     const lbl = document.createElement("span");
     lbl.className = "det-label";
+    // 라벨은 기본으로 박스 위에 붙는데, 박스가 화면 위쪽에 닿아 있으면(큰 박스가
+    // 대표적) 라벨이 영상 밖으로 잘려서 신뢰도를 못 읽는다. 그때는 박스 안쪽에 넣는다.
+    const labelRoomPx = y1 * boxOverlay.offsetHeight;
+    if (labelRoomPx < LABEL_H_PX) lbl.classList.add("inside");
     lbl.textContent =
       typeof b.confidence === "number"
         ? `${b.label} ${(b.confidence * 100).toFixed(0)}%`
@@ -234,10 +240,18 @@ speedGroup.addEventListener("click", (e) => {
 
 // ───────── 줌/팬 ─────────
 
+const MIN_SCALE = 0.25;   // 축소 한계 (박스 전체를 한눈에 보려고 줄일 때)
+const MAX_SCALE = 8;
+
 const zoom = { scale: 1, tx: 0, ty: 0 };
+const zoomBadge = document.getElementById("zoomBadge");
 
 function applyZoom() {
   previewViewport.style.transform = `translate(${zoom.tx}px, ${zoom.ty}px) scale(${zoom.scale})`;
+  if (zoomBadge) {
+    zoomBadge.textContent = `${Math.round(zoom.scale * 100)}%`;
+    zoomBadge.hidden = Math.abs(zoom.scale - 1) < 0.01;
+  }
 }
 
 function resetZoom() {
@@ -253,21 +267,30 @@ videoCard.addEventListener("wheel", (e) => {
   const mx = e.clientX - rect.left;
   const my = e.clientY - rect.top;
   const factor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
-  const newScale = Math.min(8, Math.max(1, zoom.scale * factor));
-  // 마우스 위치를 기준점으로 확대/축소
-  zoom.tx = mx - ((mx - zoom.tx) / zoom.scale) * newScale;
-  zoom.ty = my - ((my - zoom.ty) / zoom.scale) * newScale;
-  zoom.scale = newScale;
-  if (zoom.scale === 1) {
+  let newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, zoom.scale * factor));
+
+  // 1.2배씩 곱/나누기라 부동소수 오차로 정확히 1.0이 안 된다. 근처면 1로 스냅.
+  if (Math.abs(newScale - 1) < 0.02) newScale = 1;
+
+  if (newScale === 1) {
     zoom.tx = 0;
     zoom.ty = 0;
+  } else if (newScale < 1) {
+    // 축소할 때는 마우스 기준으로 당기면 구석으로 쏠려 보기 나쁘다 → 가운데 정렬
+    zoom.tx = (rect.width * (1 - newScale)) / 2;
+    zoom.ty = (rect.height * (1 - newScale)) / 2;
+  } else {
+    // 확대는 마우스 위치를 기준점으로 (보던 지점이 유지된다)
+    zoom.tx = mx - ((mx - zoom.tx) / zoom.scale) * newScale;
+    zoom.ty = my - ((my - zoom.ty) / zoom.scale) * newScale;
   }
+  zoom.scale = newScale;
   applyZoom();
 }, { passive: false });
 
 let dragging = null;
 videoCard.addEventListener("mousedown", (e) => {
-  if (zoom.scale <= 1) return;
+  if (zoom.scale <= 1) return;   // 축소/원본 상태에서는 전체가 보이므로 팬 불필요
   dragging = { x: e.clientX - zoom.tx, y: e.clientY - zoom.ty };
 });
 window.addEventListener("mousemove", (e) => {

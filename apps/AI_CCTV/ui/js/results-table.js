@@ -19,20 +19,39 @@ function rowKey(video, time_s) {
   return `${video}|${time_s}`;
 }
 
+// 0:순번 1:시간 2:직경 3:거리 4:결함항목 5:비고
+// 관로번호는 영상마다 하나뿐이라 행마다 반복할 이유가 없어 상단 입력칸으로 옮겼다.
+const COL_DEFECTS = 4;
+const COL_COUNT = 6;                          // 구분선 colSpan용
+const READONLY_COLS = new Set([0, 1]);
+
 function editableFieldForColumn(colIdx) {
-  // 0:순번 1:시간 2:관로번호 3:직경 4:거리 5:결함항목 6:비고 7:오탐
-  return ["", "", "pipe_id", "dia", "dist", "defects", "note", ""][colIdx] || "";
+  return ["", "", "dia", "dist", "defects", "note"][colIdx] || "";
 }
 
+/** 표시용 결함 문구: "BK(파손), DS(토사퇴적)". 엑셀 보고서와 같은 순서로 맞춘다.
+ *  한글명을 모르는 코드는 코드만 그대로 쓴다. */
+function defectsText(row) {
+  const codes = row.defects || [];
+  const kos = row.defects_ko || [];
+  return codes
+    .map((code, i) => {
+      const ko = kos[i];
+      return ko && ko !== code ? `${code}(${ko})` : String(code);
+    })
+    .join(", ");
+}
+
+/** 편집할 때 셀에 넣는 값. 표시는 "토사퇴적(DS)"이지만 편집은 코드("DS")로 한다 —
+ *  표시 문구를 그대로 고치게 두면 "토사퇴적(DS)" 전체가 결함 코드로 저장돼버린다. */
 function cellValue(row, colIdx) {
   switch (colIdx) {
     case 0: return row.seq;
     case 1: return row.time_str;
-    case 2: return row.pipe_id;
-    case 3: return row.dia;
-    case 4: return row.dist;
-    case 5: return row.defects.join(", ");
-    case 6: return row.note;
+    case 2: return row.dia;
+    case 3: return row.dist;
+    case 4: return (row.defects || []).join(", ");
+    case 5: return row.note;
     default: return "";
   }
 }
@@ -47,7 +66,7 @@ async function commitEdit(row, colIdx, newValue) {
 function makeCellEditable(td, row, colIdx) {
   td.addEventListener("dblclick", (e) => {
     e.stopPropagation();
-    if (colIdx === 0 || colIdx === 1 || colIdx === 7) return; // 순번/시간/오탐은 편집 불가
+    if (READONLY_COLS.has(colIdx)) return;   // 순번/시간/결함명/오탐은 편집 불가
     if (td.querySelector("input")) return;
     const original = cellValue(row, colIdx);
     td.textContent = "";
@@ -81,9 +100,11 @@ function activateRow(row) {
   }
 }
 
-function buildRowTr(row, extraClass) {
+// inGroup: 그룹(반복 결함)에 속한 자식 행이면 true → 들여쓰기로 소속을 표시한다.
+// 단독 행까지 들여쓰면 무엇에 딸린 행인지 헷갈린다.
+function buildRowTr(row, extraClass, inGroup) {
   const tr = document.createElement("tr");
-  tr.className = `row-child ${extraClass || ""}`;
+  tr.className = `row-child ${inGroup ? "row-in-group " : ""}${extraClass || ""}`;
   tr.dataset.video = row.filename;
   tr.dataset.timeS = row.time_s;
   if (row.fp) tr.classList.add("row-fp");
@@ -92,29 +113,14 @@ function buildRowTr(row, extraClass) {
   const key = rowKey(row.filename, row.time_s);
   if (selected.has(key)) tr.classList.add("row-selected");
 
-  const cols = [row.seq, row.time_str, row.pipe_id, row.dia, row.dist, row.defects.join(", "), row.note];
+  const cols = [row.seq, row.time_str, row.dia, row.dist, defectsText(row), row.note];
   cols.forEach((val, idx) => {
     const td = document.createElement("td");
     td.textContent = val;
-    if (idx === 5) td.classList.add("col-defects");
+    if (idx === COL_DEFECTS) td.classList.add("col-defects");
     makeCellEditable(td, row, idx);
     tr.appendChild(td);
   });
-
-  // 오탐 체크박스 (체크 = 오탐 → 보고서/통계에서 제외)
-  const tdFp = document.createElement("td");
-  tdFp.className = "col-fp";
-  const cb = document.createElement("input");
-  cb.type = "checkbox";
-  cb.checked = !!row.fp;
-  cb.title = "오탐으로 표시 (보고서/통계에서 제외)";
-  cb.addEventListener("click", (e) => e.stopPropagation());
-  cb.addEventListener("change", async () => {
-    await api.editRow(row.filename, row.time_s, "fp", cb.checked);
-    await refreshResults();
-  });
-  tdFp.appendChild(cb);
-  tr.appendChild(tdFp);
 
   tr.addEventListener("click", (e) => {
     if (e.target.tagName === "INPUT") return;
@@ -126,6 +132,17 @@ function buildRowTr(row, extraClass) {
   });
 
   return tr;
+}
+
+/** 그룹(같은 거리로 묶인 반복 결함) 펼치기/접기.
+ *  서버를 다시 부르지 않고 마지막 데이터로 즉시 다시 그린다 —
+ *  refreshResults()는 네트워크 왕복이라 느리고, 실패하면 토글이 조용히 먹통이 된다. */
+function toggleGroup(groupKey) {
+  if (openGroups.has(groupKey)) openGroups.delete(groupKey);
+  else openGroups.add(groupKey);
+  selected.clear();
+  selected.add(`group:${groupKey}`);   // 토글 후에도 Enter로 계속 조작할 수 있게 선택 유지
+  if (lastData) renderResults(lastData);
 }
 
 function syncSelectionClasses() {
@@ -198,7 +215,7 @@ export function renderResults(data) {
       const tr = document.createElement("tr");
       tr.className = "row-separator";
       const td = document.createElement("td");
-      td.colSpan = 8;
+      td.colSpan = COL_COUNT;
       td.textContent = `[${item.filename}]`;
       tr.appendChild(td);
       tbody.appendChild(tr);
@@ -221,17 +238,36 @@ export function renderResults(data) {
       const tr = document.createElement("tr");
       tr.className = "row-group-parent";
       tr.dataset.groupKey = groupKey;
-      const cols = [item.seq, item.time_str, item.pipe_id, item.dia, item.dist, item.defects_summary, item.note, ""];
+      if (isOpen) tr.classList.add("is-open");
+      // 다시 그려도 선택 표시가 유지되게 (토글 후 Enter 연속 조작에 필요)
+      if (selected.has(`group:${groupKey}`)) tr.classList.add("row-selected");
+
+      const cols = [item.seq, item.time_str, item.dia, item.dist,
+                    item.defects_summary, item.note];
       cols.forEach((val, idx) => {
         const td = document.createElement("td");
-        td.textContent = val;
-        if (idx === 5) td.classList.add("col-defects");
+        if (idx === 0) {
+          // 접힘/펼침 상태를 눈으로 알 수 있게 삼각형을 붙인다. 클릭해도 토글된다.
+          const caret = document.createElement("span");
+          caret.className = "group-caret";
+          caret.textContent = isOpen ? "▼" : "▶";
+          caret.title = "클릭 / 더블클릭 / Enter 로 펼치기·접기";
+          caret.addEventListener("click", (e) => {
+            e.stopPropagation();
+            toggleGroup(groupKey);
+          });
+          td.appendChild(caret);
+          td.appendChild(document.createTextNode(String(val)));
+        } else {
+          td.textContent = val;
+        }
+        if (idx === COL_DEFECTS) td.classList.add("col-defects");
         tr.appendChild(td);
       });
-      tr.addEventListener("dblclick", () => {
-        if (openGroups.has(groupKey)) openGroups.delete(groupKey);
-        else openGroups.add(groupKey);
-        refreshResults();
+
+      tr.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+        toggleGroup(groupKey);
       });
       tr.addEventListener("click", (e) => {
         if (!e.ctrlKey && !e.metaKey) selected.clear();
@@ -244,7 +280,7 @@ export function renderResults(data) {
       tbody.appendChild(tr);
 
       for (const child of item.children) {
-        const childTr = buildRowTr(child, isOpen ? "" : "row-hidden");
+        const childTr = buildRowTr(child, isOpen ? "" : "row-hidden", true);
         tbody.appendChild(childTr);
       }
     }
@@ -374,12 +410,18 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
 
     const groupKey = tr.dataset.groupKey;
-    if (openGroups.has(groupKey)) openGroups.delete(groupKey);
-    else openGroups.add(groupKey);
-    renderResults(lastData);
+    toggleGroup(groupKey);   // 더블클릭과 완전히 같은 동작
 
     const reopened = tbody.querySelector(`tr.row-group-parent[data-group-key="${CSS.escape(groupKey)}"]`);
-    if (reopened) selectNavTr(reopened);
+    if (reopened) reopened.scrollIntoView({ block: "nearest" });
+    return;
+  }
+
+  // Del: 선택한 결함 행(또는 그룹)을 삭제 — 잘못 잡힌 결함을 빠르게 지운다
+  if (e.key === "Delete") {
+    if (!selected.size) return;
+    e.preventDefault();
+    deleteSelected();
   }
 });
 
@@ -411,9 +453,32 @@ export async function refreshResults() {
   renderResults(data);
   const statusEl = document.getElementById("status");
   statusEl.textContent = data.analyzing ? "AI 분석중..." : "분석대기";
+
   const siteInput = document.getElementById("siteName");
   if (document.activeElement !== siteInput) siteInput.value = data.site_name || "";
+
+  // 관로번호는 영상별 값이라 현재 선택된 영상의 것을 상단 입력칸에 보여준다.
+  // (입력 중일 때는 덮어쓰지 않는다)
+  const pipeInput = document.getElementById("pipeId");
+  if (pipeInput && document.activeElement !== pipeInput) {
+    const cur = (data.videos || []).find((v) => v.name === getCurrentVideo());
+    pipeInput.value = cur ? cur.pipe_id || "" : "";
+    pipeInput.disabled = !cur;
+  }
+
+  // 관로 구분(신설/노후) 체크 상태를 서버 값과 맞춘다
+  const condNew = document.getElementById("condNew");
+  const condOld = document.getElementById("condOld");
+  if (condNew && condOld) {
+    condNew.checked = data.pipe_condition === "신설";
+    condOld.checked = data.pipe_condition === "노후";
+  }
   return data;
+}
+
+/** 현재 선택된 행(그룹 포함) 개수. [- 행 삭제] 버튼이 안내를 띄울지 판단하는 데 쓴다. */
+export function getSelectedCount() {
+  return selected.size;
 }
 
 export async function deleteSelected() {

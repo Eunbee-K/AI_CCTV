@@ -5,6 +5,7 @@ pywebview>=5.1
 websockets>=12.0
 requests>=2.30
 itsdangerous>=2.0   # 웹 로그인 세션(SessionMiddleware). serve_web.py에서 사용
+python-multipart>=0.0.9  # 로그인 폼 + 영상 업로드(multipart) 처리에 필요
 
 # 아래 패키지는 개발 환경(Python 3.13)에 이미 설치되어 있음 - 없다면 함께 설치
 # (Colab 원격 추론 서버를 쓸 경우 로컬에는 ultralytics/torch가 없어도 동작함)

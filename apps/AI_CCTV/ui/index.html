@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <title>AI CCTV 결함 분석기</title>
+  <link rel="icon" type="image/x-icon" href="logo.ico" />
+  <link rel="shortcut icon" type="image/x-icon" href="logo.ico" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
@@ -10,11 +12,12 @@
     <section class="left-panel">
       <div class="video-name" id="videoName">영상 파일명</div>
 
-      <div class="video-card" id="videoCard" title="휠: 확대/축소, 드래그: 이동, 더블클릭: 원래대로">
+      <div class="video-card" id="videoCard" title="휠 위: 확대 / 휠 아래: 축소, 드래그: 이동, 더블클릭: 원래대로">
         <div class="preview-viewport" id="previewViewport">
           <img id="previewImg" class="preview-img" alt="" />
           <div id="boxOverlay" class="box-overlay"></div>
         </div>
+        <span id="zoomBadge" class="zoom-badge" hidden>100%</span>
       </div>
 
       <div class="ctrl-frame">
@@ -38,7 +41,7 @@
           <div class="colab-row">
             <span class="colab-step">① 노트북 실행</span>
             <!-- ▼▼▼ 여기 href="" 안에 본인 Colab 노트북 공유 링크를 넣으세요 (지금은 공란) ▼▼▼ -->
-            <a id="colabOpen" class="clean-btn" href="" target="_blank" rel="noopener">Colab 열기</a>
+            <a id="colabOpen" class="clean-btn" href="https://colab.research.google.com/drive/1tljHagmjN_aCILR17SNLtFH6xJVbpro0#scrollTo=vs5wXuFKVIiw" target="_blank" rel="noopener">Colab 열기</a>
             <!-- ▲▲▲ 예: href="https://colab.research.google.com/drive/xxxxxxxx" ▲▲▲ -->
           </div>
           <div class="colab-row">
@@ -50,7 +53,7 @@
         </div>
       </div>
 
-      <div class="list-card">
+      <div class="list-card" id="queueCard">
         <div class="list-header">
           <span class="list-title">분석 대기 영상</span>
           <div class="list-buttons">
@@ -58,7 +61,15 @@
             <button id="btnClearVideos" class="clean-btn">목록삭제</button>
           </div>
         </div>
+        <!-- 브라우저에서 영상을 고를 때 사용. 데스크톱(exe)은 pywebview 파일창을 쓴다.
+             accept를 걸면 현장 영상(.dav 등)이 선택창에서 아예 안 보이므로 제한하지 않는다. -->
+        <input type="file" id="videoFileInput" multiple hidden />
         <ul id="videoList" class="video-list"></ul>
+        <div id="dropHint" class="drop-hint">영상 파일을 여기에 끌어놓거나 [파일추가]를 누르세요</div>
+        <div id="uploadBar" class="upload-bar" hidden>
+          <div class="upload-bar-fill" id="uploadBarFill"></div>
+          <span class="upload-bar-text" id="uploadBarText"></span>
+        </div>
       </div>
 
       <div class="log-frame">
@@ -66,6 +77,9 @@
         <div id="logConsole" class="log-console"></div>
       </div>
     </section>
+
+    <!-- 좌우 비율 조절 손잡이 (드래그) -->
+    <div class="splitter" id="splitter" title="드래그해서 좌우 비율 조절 (더블클릭: 1:1로 복귀)"></div>
 
     <section class="right-panel">
       <div class="user-bar" id="userBar" hidden>
@@ -76,6 +90,13 @@
       <div class="in-card">
         <label for="siteName">현장명</label>
         <input type="text" id="siteName" />
+        <label for="pipeId">관로번호</label>
+        <input type="text" id="pipeId" title="현재 선택된 영상의 관로번호" />
+        <!-- 관로 구분: 둘 중 하나만 선택 가능. 미선택 상태로는 분석 실행이 막힌다. -->
+        <span class="cond-group" id="pipeCondGroup">
+          <label class="cond-item"><input type="checkbox" id="condNew" value="신설" /> 신설</label>
+          <label class="cond-item"><input type="checkbox" id="condOld" value="노후" /> 노후</label>
+        </span>
         <span id="status" class="status">분석대기</span>
       </div>
 
@@ -97,12 +118,10 @@
               <tr>
                 <th class="col-seq">순번</th>
                 <th class="col-time">시간</th>
-                <th class="col-pipe">관로번호</th>
                 <th class="col-dia">직경</th>
                 <th class="col-dist">거리</th>
                 <th class="col-defects">결함항목</th>
                 <th class="col-note">비고</th>
-                <th class="col-fp">오탐</th>
               </tr>
             </thead>
             <tbody id="resultsBody"></tbody>

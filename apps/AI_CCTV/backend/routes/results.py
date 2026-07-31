@@ -38,10 +38,15 @@ class SiteNameBody(BaseModel):
     value: str
 
 
+class PipeConditionBody(BaseModel):
+    value: str
+
+
 @router.get("")
 def get_results():
     return {
         "site_name": state.site_name,
+        "pipe_condition": state.pipe_condition,
         "analyzing": state.analyzing,
         "videos": [
             {"name": name, "pipe_id": v["pipe_id"], "dia": v["dia"], "row_count": len(v["rows"])}
@@ -55,6 +60,15 @@ def get_results():
 def set_site_name(body: SiteNameBody):
     state.site_name = body.value
     return {"status": "ok"}
+
+
+@router.post("/pipe_condition")
+def set_pipe_condition(body: PipeConditionBody):
+    value = (body.value or "").strip()
+    if value not in ("", "신설", "노후"):
+        raise HTTPException(400, f"관로 구분은 '신설' 또는 '노후'만 가능합니다: {value}")
+    state.pipe_condition = value
+    return {"status": "ok", "value": state.pipe_condition}
 
 
 @router.patch("/row")

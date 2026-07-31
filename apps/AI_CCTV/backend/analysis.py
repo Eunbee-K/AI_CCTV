@@ -25,6 +25,8 @@ def start_analysis() -> Optional[str]:
         return "Analysis already running"
     if not state.video_queue:
         return "No videos to analyze"
+    if not state.pipe_condition:
+        return "관로 구분(신설/노후)을 선택한 뒤 분석을 실행하세요."
 
     # 원격(Colab) 추론 서버가 설정돼 있으면 로컬 YOLO 모델은 로드하지 않는다.
     if not state.remote_yolo_url:

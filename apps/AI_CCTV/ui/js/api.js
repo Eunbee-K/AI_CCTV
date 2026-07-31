@@ -20,9 +20,66 @@ async function req(method, path, body) {
   return res;
 }
 
+/** 영상 업로드. 파일이 크므로 진행률을 받을 수 있는 XHR을 쓴다(fetch는 업로드 진행률 미지원). */
+function uploadVideos(fileList, onProgress) {
+  return new Promise((resolve, reject) => {
+    const fd = new FormData();
+    for (const f of fileList) fd.append("files", f, f.name);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", BASE + "/api/queue/upload");
+    xhr.upload.addEventListener("progress", (e) => {
+      if (onProgress && e.lengthComputable) onProgress(e.loaded, e.total);
+    });
+    xhr.addEventListener("load", () => {
+      let data = null;
+      try { data = JSON.parse(xhr.responseText); } catch (_) {}
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data);
+      reject(new Error((data && data.detail) || `업로드 실패 (HTTP ${xhr.status})`));
+    });
+    xhr.addEventListener("error", () => reject(new Error("네트워크 오류로 업로드에 실패했습니다.")));
+    xhr.addEventListener("abort", () => reject(new Error("업로드가 취소되었습니다.")));
+    xhr.send(fd);
+  });
+}
+
+/** 보고서를 내려받는다. 저장 위치는 브라우저가 묻거나 다운로드 폴더로 간다.
+ *  응답 헤더의 파일명을 그대로 쓰고, 실패하면 서버 메시지를 그대로 보여준다. */
+async function downloadExcel() {
+  const res = await fetch(BASE + "/api/export/excel/download");
+  if (!res.ok) {
+    let msg = `보고서 생성 실패 (HTTP ${res.status})`;
+    try {
+      const data = await res.json();
+      msg = data.detail || msg;
+    } catch (_) {}
+    throw new Error(msg);
+  }
+
+  // Content-Disposition에서 파일명 추출 (한글은 filename*=utf-8'' 형식으로 온다)
+  const cd = res.headers.get("content-disposition") || "";
+  let name = "CCTV조사표.xlsx";
+  const star = cd.match(/filename\*=utf-8''([^;]+)/i);
+  const plain = cd.match(/filename="?([^";]+)"?/i);
+  if (star) name = decodeURIComponent(star[1]);
+  else if (plain) name = plain[1];
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return name;
+}
+
 export const api = {
   getQueue: () => req("GET", "/api/queue"),
   addVideos: (paths) => req("POST", "/api/queue/add", { paths }),
+  uploadVideos,
   clearQueue: () => req("POST", "/api/queue/clear"),
   selectVideo: (name) => req("POST", "/api/queue/select", { name }),
 
@@ -30,6 +87,7 @@ export const api = {
 
   getResults: () => req("GET", "/api/results"),
   setSiteName: (value) => req("POST", "/api/results/site_name", { value }),
+  setPipeCondition: (value) => req("POST", "/api/results/pipe_condition", { value }),
   editRow: (video, time_s, field, value) =>
     req("PATCH", "/api/results/row", { video, time_s, field, value }),
   addManualRow: (video, time_s) =>
@@ -38,6 +96,7 @@ export const api = {
   deleteGroup: (video, dist) => req("DELETE", "/api/results/group", { video, dist }),
 
   exportExcel: (path) => req("POST", "/api/export/excel", { path }),
+  downloadExcel,
 
   getRemoteUrl: () => req("GET", "/api/config/remote_yolo_url"),
   setRemoteUrl: (url) => req("POST", "/api/config/remote_yolo_url", { url }),

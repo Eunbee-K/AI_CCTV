@@ -12,11 +12,18 @@ class AppState:
         self.video_queue: List[Path] = []
         self.video_data_map: Dict[str, dict] = {}  # name -> {path, pipe_id, dia, rows}
         self.site_name: str = ""
+        # 관로 구분: "신설" 또는 "노후". 분석 실행 전에 반드시 골라야 한다
+        # (결함 판정 기준이 달라서 빈 값으로 돌리면 보고서가 무의미해진다).
+        self.pipe_condition: str = ""
         self.analyzing: bool = False
 
         self.temp_dir = Path(tempfile.mkdtemp(prefix="ai_cctv_"))
         self.frames_root = self.temp_dir / "frames"
         self.frames_root.mkdir(parents=True, exist_ok=True)
+        # 웹에서 업로드한 영상이 저장되는 곳. 데스크톱(exe)은 로컬 경로를 직접
+        # 쓰므로 사용하지 않는다.
+        self.uploads_root = self.temp_dir / "uploads"
+        self.uploads_root.mkdir(parents=True, exist_ok=True)
 
         self.yolo_model = None
         self.yolo_load_error: Optional[str] = None

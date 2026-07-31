@@ -27,6 +27,9 @@ results/
 *.cache
 *.tmp
 
+# 앱이 만들어낸 조사표 (산출물이므로 저장소에 두지 않는다)
+/report.xlsx
+
 # 실제 비밀번호/자격증명 (example만 git 관리)
 scripts/sweep/mail_config.yaml
 

@@ -13,6 +13,7 @@
 """
 import argparse
 import os
+import socket
 import sys
 from pathlib import Path
 
@@ -33,7 +34,14 @@ def main():
     args = ap.parse_args()
 
     print(f"[web] 로그인 활성화됨. 승인 계정: {os.environ['AUTH_USERS']}")
-    print(f"[web] 접속: http://{args.host}:{args.port}  (같은 네트워크)")
+    print(f"[web] 접속(이 PC):      http://localhost:{args.port}")
+    if args.host == "0.0.0.0":
+        try:
+            lan_ip = socket.gethostbyname(socket.gethostname())
+            print(f"[web] 접속(같은 네트워크): http://{lan_ip}:{args.port}")
+        except OSError:
+            pass
+    print("[web] ※ 반드시 http:// 로 접속 (https:// 로 열면 Invalid HTTP request 경고)")
     uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
 
 

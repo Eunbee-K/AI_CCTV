@@ -127,9 +127,15 @@ def _export_excel_row(ws, row, current_row, H_PT, IMG_WIDTH,
     pid_row = v_data["pipe_id"] if v_data else ""
     dia_row = v_data["dia"] if v_data else ""
 
+    # 결함은 코드만으로는 읽기 어려워 한글명을 괄호로 붙인다 (예: "BK(파손)").
+    # 코드가 이미 한글이거나 매핑에 없으면 코드만 그대로 쓴다.
+    defect_texts = []
+    for code, ko in zip(row.get("defects", []), row.get("defects_ko", [])):
+        defect_texts.append(f"{code}({ko})" if ko and ko != code else str(code))
+
     row_vals = [
         direction, row["time_str"], pid_row, dia_row,
-        row.get("dist", ""), ", ".join(row.get("defects", [])), row.get("note", ""),
+        row.get("dist", ""), ", ".join(defect_texts), row.get("note", ""),
     ]
     for idx, v in enumerate(row_vals, 2):
         c = ws.cell(d_row, idx, v)

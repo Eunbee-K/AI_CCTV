@@ -3,7 +3,7 @@ from typing import List, Optional
 
 import cv2
 
-from .config import EXTRACT_JPEG_QUALITY
+from .config import EXTRACT_JPEG_QUALITY, defect_korean
 from .frames import seconds_to_mmss
 from .ocr import normalize_diameter_text
 from .state import state
@@ -33,6 +33,7 @@ def mark_dist_conflicts(rows: List[dict]) -> None:
 
 
 def _row_json(seq, row: dict, fname: str, v_data: dict) -> dict:
+    defects = row.get("defects", [])
     return {
         "seq": seq,
         "time_s": row["time"],
@@ -40,7 +41,9 @@ def _row_json(seq, row: dict, fname: str, v_data: dict) -> dict:
         "pipe_id": v_data["pipe_id"],
         "dia": v_data["dia"],
         "dist": row.get("dist", ""),
-        "defects": row.get("defects", []),
+        "defects": defects,
+        # 코드(BK)와 짝이 되는 한글명(파손). 표에 별도 열로 보여준다.
+        "defects_ko": [defect_korean(d) for d in defects],
         "note": row.get("note", ""),
         "direction": row.get("direction", ""),
         "boxes": row.get("boxes_norm", []),  # 오버레이용 정규화(0~1) 박스
@@ -169,6 +172,11 @@ def add_manual_row(video: str, time_s: int) -> Optional[str]:
     v_data = state.video_data_map.get(video)
     if not v_data:
         return f"Unknown video: {video}"
+
+    # 행은 (영상, 시각)으로 구분한다. 같은 시각에 두 개가 생기면 이후 편집/삭제가
+    # 엉뚱한 행에 걸리므로 미리 막는다.
+    if any(r.get("time") == time_s for r in v_data["rows"]):
+        return f"{seconds_to_mmss(time_s)} 위치에는 이미 행이 있습니다. 다른 시점으로 이동해서 추가하세요."
 
     path: Path = v_data["path"]
     dist = ""
