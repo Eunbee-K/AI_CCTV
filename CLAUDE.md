@@ -33,7 +33,9 @@
 **`docs/PRD.md`를 반드시 먼저 읽을 것** — 여기 요약은 최소한만 남깁니다.
 
 핵심 요약:
-- 현재 배포 모델(`apps/AI_CCTV/assets/best.pt`)은 실사용 가능한 클래스가 **BK(파손)·DS(토사퇴적) 2종뿐**.
+- **현재 배포된 모델은 없다.** v1~v5는 전부 실험 단계이고 `apps/AI_CCTV/assets/best.pt`도 이
+  저장소에 없다(`.gitignore`의 `*.pt`). 최종 모델은 v6(2026-08-10 예정)에서 구성한다.
+  지금까지의 실험 경과는 `docs/reports/2026-08-04-모델학습-실험정리.md` 참고.
 - 목표는 18종 탐지(`configs/sweeps/test3_18class.yaml`) / 8종 세그멘테이션
   (`configs/sweeps/test4_seg.yaml`) / 31종 마스터 결함 코드 체계(`docs/메타데이터(총괄).xlsx`).
   오늘(2026-07-29) 안에 끝내는 20시간 예산판 `test3_18class_20h.yaml` /
