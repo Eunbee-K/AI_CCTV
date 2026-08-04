@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import auth as auth_mod
+from . import session_store
 from .config import resource_path
 from .routes import analysis as analysis_routes
 from .routes import config as config_routes
@@ -33,6 +34,13 @@ class NoCacheStaticFiles(StaticFiles):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="AI CCTV Inspector")
+
+    # 지난번 분석 결과를 되살린다. 실패해도 빈 상태로 시작할 뿐 서버는 떠야 한다.
+    err = session_store.load()
+    if err:
+        print(f"[session] {err}")
+    elif state.video_data_map:
+        print(f"[session] 지난 작업 복원: {session_store.summary()}")
 
     # 안쪽=인증 게이트, 바깥=세션. add_middleware는 나중에 add한 것이 바깥(먼저 실행)
     # 이므로 SessionMiddleware를 나중에 add해야 게이트에서 scope["session"]을 읽는다.

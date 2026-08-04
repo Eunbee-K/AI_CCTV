@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
-from .. import ws_manager
+from .. import session_store, ws_manager
 from ..state import state
 
 router = APIRouter(prefix="/api/queue", tags=["queue"])
@@ -27,6 +27,7 @@ class SelectVideoBody(BaseModel):
 def add_videos(body: AddVideosBody):
     for p in body.paths:
         state.add_video(Path(p))
+    session_store.save()
     return list_queue()
 
 
@@ -108,6 +109,7 @@ async def upload_videos(files: list[UploadFile] = File(...)):
         saved.append(dest.name)
         ws_manager.log(f"[upload] 추가됨: {dest.name} ({size / 1024 / 1024:.1f}MB)")
 
+    session_store.save()
     return {"queue": list_queue(), "saved": saved, "skipped": skipped}
 
 
@@ -119,6 +121,7 @@ def list_queue():
 @router.post("/clear")
 def clear_queue():
     state.clear_videos()
+    session_store.save()
     return {"status": "ok"}
 
 

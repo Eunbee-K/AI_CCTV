@@ -45,8 +45,8 @@ function uploadVideos(fileList, onProgress) {
 
 /** 보고서를 내려받는다. 저장 위치는 브라우저가 묻거나 다운로드 폴더로 간다.
  *  응답 헤더의 파일명을 그대로 쓰고, 실패하면 서버 메시지를 그대로 보여준다. */
-async function downloadExcel() {
-  const res = await fetch(BASE + "/api/export/excel/download");
+async function downloadFile(path, fallbackName) {
+  const res = await fetch(BASE + path);
   if (!res.ok) {
     let msg = `보고서 생성 실패 (HTTP ${res.status})`;
     try {
@@ -58,7 +58,7 @@ async function downloadExcel() {
 
   // Content-Disposition에서 파일명 추출 (한글은 filename*=utf-8'' 형식으로 온다)
   const cd = res.headers.get("content-disposition") || "";
-  let name = "CCTV조사표.xlsx";
+  let name = fallbackName;
   const star = cd.match(/filename\*=utf-8''([^;]+)/i);
   const plain = cd.match(/filename="?([^";]+)"?/i);
   if (star) name = decodeURIComponent(star[1]);
@@ -96,7 +96,12 @@ export const api = {
   deleteGroup: (video, dist) => req("DELETE", "/api/results/group", { video, dist }),
 
   exportExcel: (path) => req("POST", "/api/export/excel", { path }),
-  downloadExcel,
+  downloadExcel: () => downloadFile("/api/export/excel/download", "CCTV조사표.xlsx"),
+  downloadPipeassetPdf: () => downloadFile("/api/export/pdf/download", "CCTV야장.pdf"),
+
+  getReportMeta: (video) =>
+    req("GET", "/api/config/report_meta" + (video ? `?video=${encodeURIComponent(video)}` : "")),
+  setReportMeta: (values, video) => req("POST", "/api/config/report_meta", { values, video }),
 
   getRemoteUrl: () => req("GET", "/api/config/remote_yolo_url"),
   setRemoteUrl: (url) => req("POST", "/api/config/remote_yolo_url", { url }),

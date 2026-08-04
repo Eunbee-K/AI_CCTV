@@ -272,28 +272,169 @@ async function init() {
     }
   });
 
-  document.getElementById("btnExport").addEventListener("click", async () => {
+  // ── 보고서 출력: 형식(엑셀 / 파이프에셋 PDF) 선택 후 다운로드 ──
+  const dlgExport = document.getElementById("dlgExport");
+  document.getElementById("btnExport").addEventListener("click", () => dlgExport.showModal());
+  document.getElementById("btnExportCancel").addEventListener("click", () => dlgExport.close());
+
+  async function runExport(fmt) {
+    dlgExport.close();
     const btn = document.getElementById("btnExport");
     btn.disabled = true;
+    const label = fmt === "pdf" ? "파이프에셋 야장(PDF)" : "엑셀 조사표";
     try {
-      if (window.__hasPywebview) {
+      if (fmt === "xlsx" && window.__hasPywebview) {
         // 데스크톱(exe): 네이티브 저장 대화상자로 로컬 경로를 직접 고른다
         const path = await window.pywebview.api.save_excel_dialog();
         if (!path) return;
         await api.exportExcel(path);
         appendLog({ level: "INFO", msg: `보고서 저장: ${path}` });
         alert(`저장되었습니다.\n\n${path}`);
-      } else {
-        // 웹: 브라우저가 내려받는다(저장 위치는 브라우저 설정/저장 대화상자가 결정).
-        // 서버 경로에 저장하면 접속한 사람 PC가 아니라 서버에 파일이 생긴다.
-        const name = await api.downloadExcel();
-        appendLog({ level: "INFO", msg: `보고서 다운로드: ${name}` });
+        return;
       }
+      // 웹: 브라우저가 내려받는다(저장 위치는 브라우저 설정/저장 대화상자가 결정).
+      // 서버 경로에 저장하면 접속한 사람 PC가 아니라 서버에 파일이 생긴다.
+      appendLog({ level: "INFO", msg: `${label} 생성 중…` });
+      const name = fmt === "pdf" ? await api.downloadPipeassetPdf() : await api.downloadExcel();
+      appendLog({ level: "INFO", msg: `${label} 다운로드: ${name}` });
     } catch (e) {
-      appendLog({ level: "ERROR", msg: `보고서 출력 실패: ${e.message}` });
-      alert(`보고서 출력 실패: ${e.message}`);
+      appendLog({ level: "ERROR", msg: `${label} 출력 실패: ${e.message}` });
+      alert(`${label} 출력 실패:\n\n${e.message}`);
     } finally {
       btn.disabled = false;
+    }
+  }
+
+  dlgExport.querySelectorAll(".fmt").forEach((b) =>
+    b.addEventListener("click", () => runExport(b.dataset.fmt))
+  );
+
+  // ── 보고서 정보(야장 상단 표) 입력 ──
+  const dlgMeta = document.getElementById("dlgMeta");
+  const metaFields = document.getElementById("metaFields");
+
+  const OTHER = "기타 입력";
+
+  /** 정해진 값 중 고르는 항목. "기타 입력"을 고르면 옆에 직접 칠 칸이 열린다. */
+  function buildSelectField(key, value, options) {
+    const box = document.createElement("span");
+    box.className = "meta-choice";
+
+    const sel = document.createElement("select");
+    for (const o of [...options, OTHER]) {
+      const opt = document.createElement("option");
+      opt.value = opt.textContent = o;
+      sel.appendChild(opt);
+    }
+    const custom = document.createElement("input");
+    custom.type = "text";
+    custom.className = "meta-custom";
+    custom.placeholder = "직접 입력";
+
+    // 저장된 값이 목록에 없으면 "기타 입력" + 직접 입력 칸에 그 값을 넣는다
+    const known = options.includes(value);
+    sel.value = value && !known ? OTHER : (value || options[0]);
+    custom.value = known || !value ? "" : value;
+    custom.hidden = sel.value !== OTHER;
+
+    const sync = () => {
+      custom.hidden = sel.value !== OTHER;
+      box.dataset.value = sel.value === OTHER ? custom.value.trim() : sel.value;
+    };
+    sel.addEventListener("change", () => { sync(); if (!custom.hidden) custom.focus(); });
+    custom.addEventListener("input", sync);
+    sync();
+
+    box.dataset.key = key;
+    box.append(sel, custom);
+    return box;
+  }
+
+  const metaVideoSel = document.getElementById("metaVideo");
+  let metaVideo = null;   // 지금 편집 중인 관로(영상)
+
+  async function loadReportMeta(video) {
+    const data = await api.getReportMeta(video);
+    metaVideo = data.video;
+
+    // 관로 선택 목록 — 영상이 하나뿐이면 굳이 보여주지 않는다
+    metaVideoSel.innerHTML = "";
+    for (const name of data.videos || []) {
+      const o = document.createElement("option");
+      o.value = name;
+      o.textContent = name;
+      if (name === data.video) o.selected = true;
+      metaVideoSel.appendChild(o);
+    }
+    metaVideoSel.parentElement.hidden = (data.videos || []).length < 2;
+    renderMetaFields(data);
+  }
+
+  function renderMetaFields({ fields, values, spec, scope }) {
+      metaFields.innerHTML = "";
+      for (const key of fields) {
+        const conf = (spec && spec[key]) || {};
+        const wrap = document.createElement("label");
+        wrap.className = "meta-item";
+        if (scope && scope[key] === "project") wrap.classList.add("scope-project");
+        const lbl = document.createElement("span");
+        lbl.textContent = key;
+        if (scope && scope[key] === "project") lbl.title = "현장 전체 공통 — 모든 관로에 같이 적용";
+        wrap.appendChild(lbl);
+
+        if (conf.type === "readonly") {
+          const inp = document.createElement("input");
+          inp.type = "text";
+          inp.value = values[key] || "";
+          inp.readOnly = true;
+          inp.className = "meta-readonly";
+          inp.title = conf.hint || "";
+          wrap.appendChild(inp);
+        } else if (conf.type === "select") {
+          wrap.appendChild(buildSelectField(key, values[key] || "", conf.options || []));
+        } else {
+          const inp = document.createElement("input");
+          inp.type = "text";
+          inp.dataset.key = key;
+          inp.value = values[key] || "";
+          wrap.appendChild(inp);
+        }
+        metaFields.appendChild(wrap);
+      }
+  }
+
+  metaVideoSel.addEventListener("change", async () => {
+    try {
+      await loadReportMeta(metaVideoSel.value);
+    } catch (e) {
+      alert(`관로 정보를 불러오지 못했습니다: ${e.message}`);
+    }
+  });
+
+  document.getElementById("btnReportMeta").addEventListener("click", async () => {
+    try {
+      await loadReportMeta(getCurrentVideo());
+      dlgMeta.showModal();
+    } catch (e) {
+      alert(`보고서 정보를 불러오지 못했습니다: ${e.message}`);
+    }
+  });
+
+  document.getElementById("btnMetaCancel").addEventListener("click", () => dlgMeta.close());
+  document.getElementById("btnMetaSave").addEventListener("click", async () => {
+    const values = {};
+    metaFields.querySelectorAll("input[data-key]").forEach((i) => {
+      values[i.dataset.key] = i.value;
+    });
+    metaFields.querySelectorAll(".meta-choice[data-key]").forEach((b) => {
+      values[b.dataset.key] = b.dataset.value || "";
+    });
+    try {
+      await api.setReportMeta(values, metaVideo);
+      dlgMeta.close();
+      appendLog({ level: "INFO", msg: `보고서 정보 저장됨${metaVideo ? ` (${metaVideo})` : ""}` });
+    } catch (e) {
+      alert(`저장 실패: ${e.message}`);
     }
   });
 

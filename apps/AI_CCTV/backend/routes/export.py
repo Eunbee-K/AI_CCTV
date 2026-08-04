@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..excel_export import export_excel
+from ..pipeasset_pdf import export_pipeasset_pdf
 from ..state import state
 
 router = APIRouter(prefix="/api/export", tags=["export"])
@@ -22,14 +23,14 @@ def _safe(part: str) -> str:
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", (part or "").strip()).strip(" .")
 
 
-def _report_filename() -> str:
-    """현장명_관로번호_날짜.xlsx. 값이 없는 부분은 건너뛴다."""
+def _report_filename(prefix: str = "CCTV조사표", ext: str = "xlsx") -> str:
+    """현장명_관로번호_날짜.확장자. 값이 없는 부분은 건너뛴다."""
     pipe_id = ""
     if state.video_data_map:
         pipe_id = next(iter(state.video_data_map.values())).get("pipe_id", "")
     parts = [_safe(p) for p in (state.site_name, pipe_id) if _safe(p)]
     parts.append(datetime.now().strftime("%Y%m%d"))
-    return "_".join(["CCTV조사표", *parts]) + ".xlsx"
+    return "_".join([prefix, *parts]) + f".{ext}"
 
 
 @router.post("/excel")
@@ -60,3 +61,18 @@ def download_excel():
         raise HTTPException(500, f"보고서 생성 실패: {err}")
 
     return FileResponse(str(out), media_type=XLSX_MIME, filename=_report_filename())
+
+
+@router.get("/pdf/download")
+def download_pipeasset_pdf():
+    """파이프에셋 야장(하수관거 현황 조사 보고서) 형식 PDF를 내려보낸다."""
+    if not state.video_data_map:
+        raise HTTPException(400, "내보낼 결과가 없습니다. 먼저 영상을 분석하세요.")
+
+    out = state.temp_dir / "report_pipeasset.pdf"
+    err = export_pipeasset_pdf(str(out))
+    if err:
+        raise HTTPException(500, err)
+
+    return FileResponse(str(out), media_type="application/pdf",
+                        filename=_report_filename("CCTV야장", "pdf"))

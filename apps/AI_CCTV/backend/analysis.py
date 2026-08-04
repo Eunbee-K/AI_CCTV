@@ -1,15 +1,16 @@
+import re
 import threading
 from typing import Optional
 
 import cv2
 
-from . import ws_manager
+from . import session_store, ws_manager
 from .annotate import annotate_frame
 from .config import FRAME_INTERVAL
 from .frames import extract_frames, seconds_to_mmss
 from .ocr import ocr_distance_from_frame, ocr_overlay_metadata, normalize_diameter_text, try_ocr_find_range
 from .rows import mark_dist_conflicts
-from .state import state
+from .state import OCR_TO_META, state
 from .yolo_infer import call_yolo, init_yolo
 from .yolo_remote import call_yolo_remote
 
@@ -37,6 +38,48 @@ def start_analysis() -> Optional[str]:
     state.analyzing = True
     threading.Thread(target=_run_batch_thread, daemon=True).start()
     return None
+
+
+def _fill_report_meta_from_ocr(video_name: str, meta: dict) -> None:
+    """영상 자막에서 읽은 값으로 그 관로의 보고서 정보를 채운다.
+
+    맨홀번호·관종 등은 관로마다 다르므로 영상별로 따로 저장한다.
+    사용자가 이미 입력해둔 값은 덮어쓰지 않는다 — 검수해서 고친 것을 다시
+    OCR 결과로 되돌리면 안 되기 때문이다.
+    """
+    pipe_meta = state.pipe_meta(video_name)
+    filled = []
+    for ocr_key, meta_key in OCR_TO_META.items():
+        value = str(meta.get(ocr_key) or "").strip()
+        if value and not pipe_meta.get(meta_key):
+            pipe_meta[meta_key] = value
+            filled.append(f"{meta_key}={value}")
+    if filled:
+        ws_manager.log(f" - 보고서 정보 자동 입력: {', '.join(filled)}")
+
+
+def _update_travel_distance(video_name: str) -> None:
+    """이 관로의 총주행거리·연장을 마지막(가장 먼) 거리 표기로 채운다.
+
+    야장에서 연장과 총주행거리는 완주한 경우 같은 값이고, 미주행거리는 0이다.
+    """
+    v = state.video_data_map.get(video_name) or {}
+    best = 0.0
+    for r in v.get("rows", []):
+        m = re.search(r'(\d+(?:\.\d+)?)', str(r.get("dist") or ""))
+        if m:
+            best = max(best, float(m.group(1)))
+    if best <= 0:
+        return
+
+    pipe_meta = state.pipe_meta(video_name)
+    text = f"{best:.2f}m"
+    for key in ("총주행거리", "연장"):
+        if not pipe_meta.get(key):
+            pipe_meta[key] = text
+    if not pipe_meta.get("미주행거리"):
+        pipe_meta["미주행거리"] = "0.0m"
+    ws_manager.log(f" - 총주행거리/연장 = {text} (미주행 0.0m)")
 
 
 def _run_batch_thread():
@@ -97,6 +140,8 @@ def _run_batch_thread():
             if site and not state.site_name:
                 state.site_name = site
 
+            _fill_report_meta_from_ocr(path.name, meta)
+
             for item in merged_rows:
                 t_sec = item.get("time_s", 0)
                 frame_fp = state.frames_root / path.stem / f"{t_sec:06d}.jpg"
@@ -125,13 +170,18 @@ def _run_batch_thread():
                     "boxes": boxes,
                     "boxes_norm": norm_boxes,
                     "fp": False,
+                    "grade": "중",   # 야장 캡션용 등급. 검수하면서 소/중/대로 고친다.
                     "direction": item.get("direction", ""),
                 })
 
             mark_dist_conflicts(v_data["rows"])
+            _update_travel_distance(path.name)
             ws_manager.result_update(path.name)
+            # 영상 하나 끝날 때마다 저장 — 중간에 죽어도 여기까지는 남는다
+            session_store.save()
             ws_manager.log(f" - Done. Found {len(v_data['rows'])} issues.")
 
+        session_store.save()
         state.analyzing = False
         total_rows = sum(len(v["rows"]) for v in state.video_data_map.values())
         ws_manager.log(f">>> Analysis Finished. Total {total_rows} issues found. <<<")

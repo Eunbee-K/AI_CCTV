@@ -3,7 +3,7 @@ from typing import List, Optional
 
 import cv2
 
-from .config import EXTRACT_JPEG_QUALITY, defect_korean
+from .config import DEFECT_GRADES, EXTRACT_JPEG_QUALITY, defect_korean
 from .frames import seconds_to_mmss
 from .ocr import normalize_diameter_text
 from .state import state
@@ -44,6 +44,8 @@ def _row_json(seq, row: dict, fname: str, v_data: dict) -> dict:
         "defects": defects,
         # 코드(BK)와 짝이 되는 한글명(파손). 표에 별도 열로 보여준다.
         "defects_ko": [defect_korean(d) for d in defects],
+        # 결함 등급(소/중/대). 파이프에셋 야장 캡션에 들어간다. 기본 "중".
+        "grade": row.get("grade") or "중",
         "note": row.get("note", ""),
         "direction": row.get("direction", ""),
         "boxes": row.get("boxes_norm", []),  # 오버레이용 정규화(0~1) 박스
@@ -140,6 +142,11 @@ def edit_row(video: str, time_s: int, field: str, value) -> Optional[str]:
                 row["defects"] = [d.strip() for d in str(value).split(",") if d.strip()]
         elif field == "note":
             row["note"] = str(value)
+        elif field == "grade":
+            v = str(value).strip()
+            if v not in DEFECT_GRADES:
+                return f"등급은 {'/'.join(DEFECT_GRADES)} 중 하나여야 합니다: {v}"
+            row["grade"] = v
         elif field == "fp":
             row["fp"] = value if isinstance(value, bool) else str(value).lower() in ("true", "1", "y")
         else:
@@ -202,7 +209,7 @@ def add_manual_row(video: str, time_s: int) -> Optional[str]:
     v_data["rows"].append({
         "time": time_s, "dist": dist, "defects": [],
         "note": "수동", "frame_path": fp, "direction": "",
-        "boxes": [], "boxes_norm": [], "fp": False,
+        "boxes": [], "boxes_norm": [], "fp": False, "grade": "중",
     })
     mark_dist_conflicts(v_data["rows"])
     return None

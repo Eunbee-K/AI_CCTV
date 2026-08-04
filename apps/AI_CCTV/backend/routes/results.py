@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from .. import session_store
 from ..rows import add_manual_row, build_results_view, delete_group, delete_row, edit_row
 from ..state import state
 from ..ws_manager import result_update
@@ -59,6 +60,7 @@ def get_results():
 @router.post("/site_name")
 def set_site_name(body: SiteNameBody):
     state.site_name = body.value
+    session_store.save()
     return {"status": "ok"}
 
 
@@ -68,6 +70,7 @@ def set_pipe_condition(body: PipeConditionBody):
     if value not in ("", "신설", "노후"):
         raise HTTPException(400, f"관로 구분은 '신설' 또는 '노후'만 가능합니다: {value}")
     state.pipe_condition = value
+    session_store.save()
     return {"status": "ok", "value": state.pipe_condition}
 
 
@@ -77,6 +80,7 @@ def patch_row(body: EditRowBody):
     if err:
         raise HTTPException(400, err)
     result_update(body.video)
+    session_store.save()
     return {"status": "ok"}
 
 
@@ -86,6 +90,7 @@ def post_manual_row(body: ManualRowBody):
     if err:
         raise HTTPException(400, err)
     result_update(body.video)
+    session_store.save()
     return {"status": "ok"}
 
 
@@ -95,6 +100,7 @@ def delete_single_row(body: DeleteRowBody):
     if err:
         raise HTTPException(400, err)
     result_update(body.video)
+    session_store.save()
     return {"status": "ok"}
 
 
@@ -104,6 +110,7 @@ def delete_row_group(body: DeleteGroupBody):
     if err:
         raise HTTPException(400, err)
     result_update(body.video)
+    session_store.save()
     return {"status": "ok"}
 
 

@@ -121,6 +121,7 @@
                 <th class="col-dia">직경</th>
                 <th class="col-dist">거리</th>
                 <th class="col-defects">결함항목</th>
+                <th class="col-grade">등급</th>
                 <th class="col-note">비고</th>
               </tr>
             </thead>
@@ -132,6 +133,7 @@
           <button id="btnRun" class="clean-btn primary">분석 실행</button>
           <button id="btnAddRow" class="clean-btn">+ 행 추가</button>
           <button id="btnDelRow" class="clean-btn">- 행 삭제</button>
+          <button id="btnReportMeta" class="clean-btn">보고서 정보</button>
           <button id="btnExport" class="clean-btn">보고서 출력</button>
         </div>
       </div>
@@ -147,6 +149,42 @@
       </div>
     </section>
   </div>
+
+  <!-- 출력 형식 선택 -->
+  <dialog id="dlgExport" class="dlg">
+    <h3 class="dlg-title">보고서 출력</h3>
+    <p class="dlg-sub">어떤 형식으로 내려받을지 선택하세요.</p>
+    <div class="fmt-list">
+      <button class="fmt" data-fmt="xlsx">
+        <span class="fmt-name">엑셀 조사표 (.xlsx)</span>
+        <span class="fmt-desc">기존 형식. 프레임 사진 + 결함 표가 한 시트에 들어갑니다.</span>
+      </button>
+      <button class="fmt" data-fmt="pdf">
+        <span class="fmt-name">파이프에셋 야장 (.pdf)</span>
+        <span class="fmt-desc">하수관거 현황 조사 보고서 형식. A4 한 장에 사진 6장 + 관로 모식도.
+          상단 표는 [보고서 정보]에 입력한 값이 들어갑니다.</span>
+      </button>
+    </div>
+    <div class="dlg-foot">
+      <button id="btnExportCancel" class="clean-btn">취소</button>
+    </div>
+  </dialog>
+
+  <!-- 야장 상단 표 입력 -->
+  <dialog id="dlgMeta" class="dlg dlg-wide">
+    <h3 class="dlg-title">보고서 정보</h3>
+    <p class="dlg-sub">파이프에셋 야장 상단 표에 들어가는 값입니다. 비워두면 실물 야장처럼 공란으로 인쇄됩니다.</p>
+    <div class="meta-target">
+      <label for="metaVideo">관로 선택</label>
+      <select id="metaVideo"></select>
+      <span class="meta-target-hint">맨홀번호·관종·거리는 관로마다 따로 저장됩니다.</span>
+    </div>
+    <div id="metaFields" class="meta-grid"></div>
+    <div class="dlg-foot">
+      <button id="btnMetaCancel" class="clean-btn">취소</button>
+      <button id="btnMetaSave" class="clean-btn primary">저장</button>
+    </div>
+  </dialog>
 
   <script type="module" src="js/app.js"></script>
 </body>
