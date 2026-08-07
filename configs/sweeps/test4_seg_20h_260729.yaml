@@ -61,8 +61,8 @@ dataset:
 
 workspace:
   dataset_root: /home/workstation/ai_cctv/_sweep_workspace/dataset
-  results_root: /home/workstation/ai_cctv/_sweep_workspace/results
-  summary_csv: /home/workstation/ai_cctv/_sweep_workspace/sweep_summary.csv
+  results_root: /home/workstation/ai_cctv/AI_CCTV_RESULTS
+  summary_csv: /home/workstation/ai_cctv/AI_CCTV_RESULTS/test4_seg_20h_260729_sweep01/sweep_summary.csv
 
 model: /home/workstation/ai_cctv/pretrained_models/yolo11l-seg.pt
 device: 0
@@ -74,4 +74,4 @@ runs:
   - name: test4seg_20h_260729_960_e50
     imgsz: 960
     epochs: 50
-    batch: -1
+    batch: 8

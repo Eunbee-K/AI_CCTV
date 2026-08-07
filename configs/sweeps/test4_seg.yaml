@@ -67,11 +67,12 @@ dataset:
         - {type: yolo_txt, path: "aihub_data_bbox", code: IN}
 
 workspace:
-  # test3와 같은 경로를 써도 된다 (sweep_name별로 하위 폴더가 나뉘고,
-  # summary_csv는 한 표에 두 실험이 함께 쌓여 메일 한 번에 다 온다).
+  # 결과는 실험명(sweep_name)별 폴더 하나에 다 모인다: AI_CCTV_RESULTS/test4_seg_sweep01/
+  # (test3와 결과를 하나로 합쳐 메일 한 통으로 받고 싶으면 summary_csv를 test3와
+  # 같은 경로로 맞추면 된다 — 기본값은 실험별로 분리)
   dataset_root: /home/workstation/ai_cctv/_sweep_workspace/dataset
-  results_root: /home/workstation/ai_cctv/_sweep_workspace/results
-  summary_csv: /home/workstation/ai_cctv/_sweep_workspace/sweep_summary.csv
+  results_root: /home/workstation/ai_cctv/AI_CCTV_RESULTS
+  summary_csv: /home/workstation/ai_cctv/AI_CCTV_RESULTS/test4_seg_sweep01/sweep_summary.csv
 
 # 세그멘테이션 모델 가중치 — 워크스테이션에 미리 받아둘 것 (오프라인 다운로드 불가).
 model: /home/workstation/ai_cctv/pretrained_models/yolo11l-seg.pt
@@ -84,4 +85,5 @@ runs:
   - name: test4seg_960_e50
     imgsz: 960
     epochs: 50
-    batch: -1
+    # batch=-1(AutoBatch)은 RTX 5090에서 너무 보수적으로 잡히므로 수동 8로 고정.
+    batch: 8
