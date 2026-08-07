@@ -33,3 +33,7 @@ results/
 # 실제 비밀번호/자격증명 (example만 git 관리)
 scripts/sweep/mail_config.yaml
 
+# Cloudflare Quick Tunnel 실행 시 생기는 임시 주소/로그 (재실행마다 바뀜)
+apps/AI_CCTV/public_url.txt
+apps/AI_CCTV/tunnel.log
+
