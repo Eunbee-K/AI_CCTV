@@ -115,12 +115,18 @@ nohup python run_sweep.py \
   > /dev/null 2>&1 &
 ```
 
-여러 스윕을 이어 돌릴 때 mailer는 **마지막 config**를 바라보게 하면 된다 —
-두 config의 `summary_csv`가 같은 경로면 요약표 하나에 두 실험이 함께 쌓여서,
-마지막 스윕이 끝난 뒤 메일 한 통으로 전체 결과가 온다.
+결과는 실험(sweep_name)별로 폴더 하나에 다 모인다: `results_root/<sweep_name>/`
+안에 run별 결과 폴더, 로그, state, `sweep_summary.csv`가 함께 들어간다. 기본값은
+실험마다 분리되어 있어서(`test3_18class_sweep01/`, `test4_seg_sweep01/` 등) 서로
+섞이지 않는다.
 
-- 진행 로그: `<results_root의 부모 경로>/<sweep_name>.log`
-- 진행 상태: `<results_root의 부모 경로>/<sweep_name>.state.json` (run별 pending/running/done/failed)
+여러 스윕을 이어 돌리면서 요약표/메일을 하나로 합치고 싶으면, 두 config의
+`workspace.summary_csv`를 같은 경로로 맞추고 mailer는 **마지막 config**를 바라보게
+하면 된다 — 그러면 요약표 하나에 두 실험이 함께 쌓여서 마지막 스윕이 끝난 뒤
+메일 한 통으로 전체 결과가 온다 (기본값은 아니고 필요할 때 수동으로 맞추는 옵션).
+
+- 진행 로그: `results_root/<sweep_name>/<sweep_name>.log`
+- 진행 상태: `results_root/<sweep_name>/<sweep_name>.state.json` (run별 pending/running/done/failed)
 - run 하나가 실패해도 스윕 전체가 멈추지 않고 다음 run으로 넘어간다.
 - 워크스테이션이 재부팅되거나 프로세스가 죽었다 다시 실행해도, 이미 `done`인
   run은 건너뛰고 이어서 진행한다 (`run_sweep.py`를 그대로 다시 실행하면 됨).

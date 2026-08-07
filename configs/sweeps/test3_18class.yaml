@@ -123,8 +123,10 @@ workspace:
   # 134,000장이라 용량을 꽤 쓰니 워크스테이션 로컬 디스크 중 여유 있는
   # 경로로 지정할 것.
   dataset_root: /home/workstation/ai_cctv/_sweep_workspace/dataset
-  results_root: /home/workstation/ai_cctv/_sweep_workspace/results
-  summary_csv: /home/workstation/ai_cctv/_sweep_workspace/sweep_summary.csv
+  # 결과(run 결과 폴더, 로그, state, 요약표)는 실험명(sweep_name) 폴더 하나에
+  # 다 모인다: AI_CCTV_RESULTS/test3_18class_sweep01/
+  results_root: /home/workstation/ai_cctv/AI_CCTV_RESULTS
+  summary_csv: /home/workstation/ai_cctv/AI_CCTV_RESULTS/test3_18class_sweep01/sweep_summary.csv
 
 # 워크스테이션에 이미 받아둔 로컬 가중치 경로 (오프라인이라 자동 다운로드 불가).
 model: /home/workstation/ai_cctv/pretrained_models/yolo11l.pt
@@ -141,4 +143,6 @@ runs:
   - name: test3_960_e50
     imgsz: 960
     epochs: 50
-    batch: -1
+    # batch=-1(AutoBatch)은 RTX 5090에서 메모리를 과대추정해 batch=4로 너무
+    # 보수적으로 잡음(6GB/32GB만 사용). 수동 8로 고정 (14GB 사용, 여유 있음).
+    batch: 8

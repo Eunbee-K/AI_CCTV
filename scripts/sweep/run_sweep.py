@@ -25,7 +25,8 @@ import report
 
 def default_state_path(cfg: dict) -> Path:
     results_root = Path(cfg["workspace"]["results_root"])
-    return results_root.parent / f"{cfg['sweep_name']}.state.json"
+    sweep_name = cfg["sweep_name"]
+    return results_root / sweep_name / f"{sweep_name}.state.json"
 
 
 def run_one(cfg: dict, run_cfg: dict, log) -> dict:
@@ -127,11 +128,12 @@ def run_sweep(config_path: str, state_arg: str = None) -> None:
 
     results_root = ensure_dir(cfg["workspace"]["results_root"])
     ensure_dir(cfg["workspace"]["dataset_root"])
+    sweep_dir = ensure_dir(results_root / sweep_name)
 
     state_path = Path(state_arg) if state_arg else default_state_path(cfg)
     state = StateStore(state_path)
 
-    log = setup_logger(sweep_name, results_root.parent / f"{sweep_name}.log")
+    log = setup_logger(sweep_name, sweep_dir / f"{sweep_name}.log")
     log.info(f"=== 스윕 시작: {sweep_name} ({len(cfg['runs'])}개 run) ===")
 
     for run_cfg in cfg["runs"]:
