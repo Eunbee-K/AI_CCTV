@@ -47,6 +47,39 @@ YOLO_IGNORE_CLASSES = {
     if x.strip()
 }
 
+# ───────── Stage-1 정상/결함 필터 ─────────
+# YOLO 앞단(또는 옆)에서 프레임에 결함이 있는지만 판정하는 분류기.
+#
+#   off       쓰지 않는다
+#   parallel  모든 프레임을 YOLO와 필터 양쪽에 넣고 두 판단을 대조한다(기본).
+#             느려지는 건 10% 남짓인데, YOLO가 놓친 프레임을 필터가 짚어주고
+#             반대로 YOLO 오탐도 걸러진다.
+#   series    필터를 통과한 프레임만 YOLO에 넣는다. 4~5배 빠르지만 필터가 놓친
+#             결함은 아무 흔적 없이 사라진다 — 실영상 검증 전에는 쓰지 말 것.
+#
+# 2026-08-11 실측 결과 기본값은 off다. 현재 모델은 현장 영상에서 쓸 수 없다.
+#
+#   현장 프레임 307장(fieldset_v1_label)   정상 태그 132장 중 116장(88%)을 결함으로 오판
+#   실제 CCTV 영상 2편                      관 안에 들어간 뒤 97%를 결함으로 판정
+#
+# 정상/결함 프레임의 출력 중앙값이 둘 다 0.976으로 사실상 구분하지 못한다. 원인은
+# 학습 데이터의 정상(IN·PJ)이 전부 AIHub 출신이고 그중 90%/85%가 train↔val 근접
+# 중복이어서, "관 내부 정상"을 일반화해 배울 필요가 없었던 것으로 보인다. 실제로
+# 전이된 정상 개념은 "관 밖"(OUT_MH·OUT_INVERT·OUT_CAR)뿐이라, 영상 첫 0~10초
+# (맨홀 구간)만 정상으로 나온다.
+#
+# 현장 정상 프레임을 학습에 넣어 다시 만든 뒤 parallel로 올릴 것.
+FILTER_MODE = os.getenv("FILTER_MODE", "off").strip().lower()
+FILTER_MODEL_PATH = Path(
+    os.getenv("FILTER_MODEL_PATH", str(resource_path("assets/filter.onnx")))
+)
+# 검증 결과 이 값에서 결함 재현율 99% 이상, 정상 오탐 0이었다.
+FILTER_THRESHOLD = float(os.getenv("FILTER_THRESHOLD", "0.9"))
+FILTER_BATCH_SIZE = int(os.getenv("FILTER_BATCH_SIZE", "16"))
+# parallel에서 "필터만 감지"로 새로 만드는 행의 상한(영상당). 필터가 오작동하면
+# 표가 수백 줄로 불어나 검토가 불가능해지므로 막아둔다.
+FILTER_MAX_MISS_ROWS = int(os.getenv("FILTER_MAX_MISS_ROWS", "30"))
+
 # 필요하면 여기에 클래스별 한글 표시명을 추가/수정. 목록에 없는 클래스는
 # best.pt에 저장된 클래스명이 그대로 표시된다.
 YOLO_CLASS_MAP = {
