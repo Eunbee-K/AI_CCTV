@@ -1,11 +1,11 @@
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import cv2
 
 from .config import DEFECT_GRADES, EXTRACT_JPEG_QUALITY, defect_korean
 from .frames import seconds_to_mmss
-from .ocr import normalize_diameter_text
+from .ocr import normalize_diameter_text, ocr_distance_from_frame
 from .state import state
 
 
@@ -15,16 +15,18 @@ def mark_dist_conflicts(rows: List[dict]) -> None:
     그 거리의 모든 row.note 에 '확인필요'를 한 번만 붙인다.
     (실제 rows는 삭제하지 않음)
     """
+    # 손으로 넣은 행은 세지도, 표시하지도 않는다. 검수하려고 일부러 찍은
+    # 지점이라 "확인필요"가 붙으면 비고란이 지저분해지기만 한다.
     dist_counts = {}
     for r in rows:
         dist = (r.get("dist") or "").strip()
-        if not dist:
+        if not dist or r.get("manual"):
             continue
         dist_counts[dist] = dist_counts.get(dist, 0) + 1
 
     for r in rows:
         dist = (r.get("dist") or "").strip()
-        if not dist:
+        if not dist or r.get("manual"):
             continue
         if dist_counts.get(dist, 0) > 1:
             note = (r.get("note") or "").strip()
@@ -54,11 +56,20 @@ def _row_json(seq, row: dict, fname: str, v_data: dict) -> dict:
     }
 
 
-def build_results_view() -> List[dict]:
-    """refresh_tree()의 그룹핑 로직(구분선/거리 없는 행/거리 그룹)을 순수 함수로 재구현."""
+def build_results_view(only_video: Optional[str] = None) -> List[dict]:
+    """결과표에 뿌릴 목록(구분선/단독 행/거리 그룹)을 만든다.
+
+    only_video를 주면 그 영상만 담는다. 여러 영상을 분석하면 결과가 한 줄로 쭉
+    이어져서 어느 관로 것인지 헷갈리므로, 화면에서는 선택한 영상만 본다.
+    """
     display = []
 
-    for fname, v_data in state.video_data_map.items():
+    items = state.video_data_map.items()
+    if only_video:
+        v = state.video_data_map.get(only_video)
+        items = [(only_video, v)] if v else []
+
+    for fname, v_data in items:
         rows = v_data["rows"]
         rows.sort(key=lambda x: x["time"])
 
@@ -68,28 +79,34 @@ def build_results_view() -> List[dict]:
         dist_groups: dict = {}
         for r in rows:
             dist = (r.get("dist") or "").strip()
-            if not dist:
+            # 손으로 넣은 행은 거리가 같아도 묶지 않는다 — 검수하려고 따로 찍은
+            # 지점이라 남의 그룹 안에 접혀 들어가면 찾을 수가 없다.
+            if not dist or r.get("manual"):
                 no_dist_rows.append(r)
             else:
                 dist_groups.setdefault(dist, []).append(r)
 
         seq = 1
 
-        for row in no_dist_rows:
-            display.append({
-                "type": "row",
-                **_row_json(seq, row, fname, v_data),
-            })
-            seq += 1
-
-        sorted_groups = sorted(
-            dist_groups.items(),
-            key=lambda kv: min(r["time"] for r in kv[1])
-        )
-
-        for dist, group_rows in sorted_groups:
+        # 거리 없는 단독 행과 거리 그룹을 한 줄로 세워 '시각' 순으로 정렬한다.
+        # 예전에는 거리 없는 행을 전부 앞에 몰아넣어서, 수동으로 추가한 행이
+        # 엉뚱하게 맨 위에 붙는 것처럼 보였다.
+        entries = [(r["time"], "row", r) for r in no_dist_rows]
+        for dist, group_rows in dist_groups.items():
             group_rows.sort(key=lambda r: r["time"])
+            entries.append((group_rows[0]["time"], "group", (dist, group_rows)))
+        entries.sort(key=lambda e: e[0])
 
+        for _, kind, payload in entries:
+            if kind == "row":
+                display.append({
+                    "type": "row",
+                    **_row_json(seq, payload, fname, v_data),
+                })
+                seq += 1
+                continue
+
+            dist, group_rows = payload
             if len(group_rows) == 1:
                 display.append({
                     "type": "row",
@@ -175,22 +192,35 @@ def delete_group(video: str, dist: str) -> Optional[str]:
     return None
 
 
-def add_manual_row(video: str, time_s: int) -> Optional[str]:
+def add_manual_row(video: str, time_s: int) -> Tuple[Optional[str], int]:
+    """수동 행을 추가하고 (오류메시지, 실제로 넣은 시각)을 돌려준다.
+
+    요청한 초가 이미 차 있으면 가장 가까운 빈 초로 옮기므로, 어디에 들어갔는지
+    호출한 쪽에 알려줘야 화면에서 그 행을 잡아줄 수 있다.
+    """
     v_data = state.video_data_map.get(video)
     if not v_data:
-        return f"Unknown video: {video}"
+        return f"Unknown video: {video}", time_s
 
-    # 행은 (영상, 시각)으로 구분한다. 같은 시각에 두 개가 생기면 이후 편집/삭제가
-    # 엉뚱한 행에 걸리므로 미리 막는다.
-    if any(r.get("time") == time_s for r in v_data["rows"]):
-        return f"{seconds_to_mmss(time_s)} 위치에는 이미 행이 있습니다. 다른 시점으로 이동해서 추가하세요."
+    # 행은 (영상, 시각)으로 구분하므로 같은 초에 두 개가 있으면 안 된다.
+    # 예전에는 여기서 그냥 실패했는데, 결함이 몰린 구간에서는 버튼이 계속 안 먹는
+    # 것처럼 보였다. 대신 비어 있는 가장 가까운 초를 찾아 거기에 넣는다.
+    taken = {r.get("time") for r in v_data["rows"]}
+    if time_s in taken:
+        duration = int(v_data.get("duration") or 0)
+        for step in range(1, 61):
+            for cand in (time_s + step, time_s - step):
+                if cand >= 0 and cand not in taken and (not duration or cand <= duration):
+                    time_s = cand
+                    break
+            else:
+                continue
+            break
+        else:
+            return (f"{seconds_to_mmss(time_s)} 근처가 모두 차 있습니다. "
+                    f"다른 구간으로 이동해서 추가하세요."), time_s
 
     path: Path = v_data["path"]
-    dist = ""
-    if v_data["rows"]:
-        closest = min(v_data["rows"], key=lambda x: abs(x["time"] - time_s))
-        dist = closest["dist"]
-
     fp = state.frames_root / path.stem / f"{time_s:06d}.jpg"
     fp.parent.mkdir(parents=True, exist_ok=True)
 
@@ -206,10 +236,17 @@ def add_manual_row(video: str, time_s: int) -> Optional[str]:
     finally:
         cap.release()
 
+    # 거리는 방금 뽑은 프레임의 자막에서 읽는다. 예전에는 시간상 가까운 행의
+    # 거리를 그대로 물려받았는데, 그러면 남의 거리 그룹에 끌려 들어가 버렸다.
+    dist = ocr_distance_from_frame(fp) if fp.exists() else ""
+
     v_data["rows"].append({
         "time": time_s, "dist": dist, "defects": [],
-        "note": "수동", "frame_path": fp, "direction": "",
+        "note": "", "frame_path": fp, "direction": "",
         "boxes": [], "boxes_norm": [], "fp": False, "grade": "중",
+        # 손으로 넣은 행은 거리가 같아도 묶지 않고 단독으로 보여준다
+        "manual": True,
     })
+    v_data["rows"].sort(key=lambda r: r["time"])
     mark_dist_conflicts(v_data["rows"])
-    return None
+    return None, time_s

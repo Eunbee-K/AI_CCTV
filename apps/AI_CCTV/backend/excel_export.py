@@ -10,8 +10,11 @@ from .rows import build_results_view
 from .state import state
 
 
-def export_excel(path: str) -> Optional[str]:
-    """엑셀 보고서를 path에 저장. 실패 시 에러 메시지를 반환, 성공 시 None."""
+def export_excel(path: str, only_video: Optional[str] = None) -> Optional[str]:
+    """엑셀 보고서를 path에 저장. 실패 시 에러 메시지를 반환, 성공 시 None.
+
+    only_video를 주면 그 관로만 담는다(관로별로 따로 뽑을 때).
+    """
     wb = Workbook()
     ws = wb.active
     ws.title = "CCTV 조사 집계표"
@@ -31,11 +34,15 @@ def export_excel(path: str) -> Optional[str]:
     ws['B4'] = ' ▣ 관로번호 :'
     ws['B4'].font = font_bold
     ws.merge_cells('C3:H3')
-    ws['C3'] = state.site_name
+    # 현장명·관로번호는 관로마다 다르다. 한 관로만 뽑을 때는 그 관로 것을 쓰고,
+    # 전체를 한 파일로 뽑을 때만 첫 관로 값을 대표로 쓴다.
+    ws['C3'] = state.site_name_of(only_video) if only_video else state.site_name
     ws['C3'].font = font_norm
 
     pid_val = ""
-    if state.video_data_map:
+    if only_video:
+        pid_val = (state.video_data_map.get(only_video) or {}).get("pipe_id", "")
+    elif state.video_data_map:
         pid_val = list(state.video_data_map.values())[0].get("pipe_id", "")
     ws.merge_cells('C4:H4')
     ws['C4'] = pid_val
@@ -52,7 +59,7 @@ def export_excel(path: str) -> Optional[str]:
     H_PT = 28.8
     IMG_WIDTH = 740
 
-    display = build_results_view()
+    display = build_results_view(only_video)
     for item in display:
         if item["type"] == "separator":
             continue
