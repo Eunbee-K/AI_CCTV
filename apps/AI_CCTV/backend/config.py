@@ -41,9 +41,15 @@ YOLO_IMGSZ = int(os.getenv("YOLO_IMGSZ", "960"))
 # ultralytics가 전부 한 배치로 올려 수 GB를 요구한다(112장 → 3.7GB 할당 실패).
 # 원격 경로의 REMOTE_CHUNK_SIZE와 같은 취지.
 YOLO_CHUNK_SIZE = int(os.getenv("YOLO_CHUNK_SIZE", "8"))
+# 결함이 아닌 맥락 클래스. 모델은 학습 안정을 위해 이들을 클래스로 갖지만
+# 조사표에는 올리지 않는다. PJ(정상 이음부)·IN(관 내부)은 정상이고,
+# OUT_*(맨홀·인버트·자동차)은 관 밖 장면이다.
 YOLO_IGNORE_CLASSES = {
     x.strip().lower()
-    for x in os.getenv("YOLO_IGNORE_CLASSES", "normal,none,background,ok").split(",")
+    for x in os.getenv(
+        "YOLO_IGNORE_CLASSES",
+        "normal,none,background,ok,pj,in,out_mh,out_invert,out_car",
+    ).split(",")
     if x.strip()
 }
 
@@ -57,24 +63,35 @@ YOLO_IGNORE_CLASSES = {
 #   series    필터를 통과한 프레임만 YOLO에 넣는다. 4~5배 빠르지만 필터가 놓친
 #             결함은 아무 흔적 없이 사라진다 — 실영상 검증 전에는 쓰지 말 것.
 #
-# 2026-08-11 실측 결과 기본값은 off다. 현재 모델은 현장 영상에서 쓸 수 없다.
+# 2026-08-12 기준 parallel. 배포 모델은 OLD_v3(야장 12,051장 + AIHub 정상 + S20 결함 보강).
 #
-#   현장 프레임 307장(fieldset_v1_label)   정상 태그 132장 중 116장(88%)을 결함으로 오판
-#   실제 CCTV 영상 2편                      관 안에 들어간 뒤 97%를 결함으로 판정
+#   야장 val(관로 113개, 학습 미포함)   AUC 0.9503 · 재현율 82.6% · 정밀도 91.3%
+#   실제 영상 SM2 8관로 1,014프레임     결함 15건을 전부 찾는 데 평균 상위 8%만 검토
 #
-# 정상/결함 프레임의 출력 중앙값이 둘 다 0.976으로 사실상 구분하지 못한다. 원인은
-# 학습 데이터의 정상(IN·PJ)이 전부 AIHub 출신이고 그중 90%/85%가 train↔val 근접
-# 중복이어서, "관 내부 정상"을 일반화해 배울 필요가 없었던 것으로 보인다. 실제로
-# 전이된 정상 개념은 "관 밖"(OUT_MH·OUT_INVERT·OUT_CAR)뿐이라, 영상 첫 0~10초
-# (맨홀 구간)만 정상으로 나온다.
+# 처음 만든 모델(AIHub 78,388장)은 현장 AUC 0.516으로 동전 던지기였다. 양이 아니라
+# 도메인이 문제였고, 조사원이 프레임마다 판정한 야장 데이터가 그것을 뒤집었다.
 #
-# 현장 정상 프레임을 학습에 넣어 다시 만든 뒤 parallel로 올릴 것.
-FILTER_MODE = os.getenv("FILTER_MODE", "off").strip().lower()
+# **series는 아직 쓰지 말 것.** 실측에서 직렬은 결함 8.3%를 잃고 시간은 1%만 아꼈다.
+# 그리고 학습이 부족한 결함 유형(변형 등)은 상위 31%까지 내려가므로, 관문으로 세우면
+# 그런 결함이 흔적 없이 사라진다. parallel은 아무것도 버리지 않고 검토 우선순위만 준다.
+# (직렬/병렬 최종 결정은 데이터 추가 확인 후)
+#
+# **이 모델은 노후관로(우수관) 전용이다.** 관로구분이 '신설'이면 자동으로 건너뛴다
+# (analysis.py). 신설용 필터는 데이터 부족으로 보류 — 현장 1,404장으로는 AUC 0.75.
+FILTER_MODE = os.getenv("FILTER_MODE", "parallel").strip().lower()
 FILTER_MODEL_PATH = Path(
     os.getenv("FILTER_MODEL_PATH", str(resource_path("assets/filter.onnx")))
 )
-# 검증 결과 이 값에서 결함 재현율 99% 이상, 정상 오탐 0이었다.
-FILTER_THRESHOLD = float(os.getenv("FILTER_THRESHOLD", "0.9"))
+# **모델을 바꾸면 이 값도 반드시 다시 재야 한다.** 임계값은 모델의 점수 분포에
+# 붙어 있는 값이라 그대로 두면 엉뚱하게 동작한다(v2 기준 0.9를 v1에서 그대로 쓰다가
+# 결함 33%를 버릴 뻔했다). 아래는 OLD_v3 배포본으로 야장 val 2,580장에서 실측한 값이다.
+#
+#   0.0320 -> 재현율 99.0% · 프레임 23.6% 제거 · 놓치는 결함 11장   <- 채택
+#   0.0429 -> 재현율 98.1% · 프레임 32.2% 제거 · 놓치는 결함 22장
+#   0.0708 -> 재현율 95.0% · 프레임 43.2% 제거 · 놓치는 결함 57장
+#
+# parallel에서는 이 값이 "결함 의심" 표시 기준일 뿐 프레임을 버리지 않는다.
+FILTER_THRESHOLD = float(os.getenv("FILTER_THRESHOLD", "0.032"))
 FILTER_BATCH_SIZE = int(os.getenv("FILTER_BATCH_SIZE", "16"))
 # parallel에서 "필터만 감지"로 새로 만드는 행의 상한(영상당). 필터가 오작동하면
 # 표가 수백 줄로 불어나 검토가 불가능해지므로 막아둔다.
@@ -126,6 +143,9 @@ DEFECT_CODE_KO = {
     # 매뉴얼 25종에는 없지만 데이터셋에 존재하는 클래스
     "PJ": "이음부(정상)",
     "ETC": "기타",
+    # test6 모델은 영구장애물(PO)과 임시장애물(TO)을 하나로 묶어 학습했다.
+    # 둘을 나누면 정확도가 떨어져서 합친 것이라, 검수자가 표에서 구분해 준다.
+    "OBST": "장애물",
     "IN": "내부(정상)",
     "OUT_MH": "외부-맨홀",
     "OUT_INVERT": "외부-인버트",

@@ -90,6 +90,15 @@ def _run_filter(frames, video_name: str) -> Dict[str, float]:
     if FILTER_MODE == "off" or not frames:
         return {}
 
+    # 지금 필터는 노후관로(우수관) 조사 야장으로만 학습했다. 신설관로는 정상의
+    # 생김새가 달라서(새 관은 깨끗해야 정상, 노후관은 흙이 좀 있어도 정상)
+    # 그대로 쓰면 오판한다. 신설관로용 모델이 생기기 전까지는 건너뛴다.
+    if state.pipe_condition != "노후":
+        ws_manager.log(
+            f" - Filter skipped: 노후관로 전용 모델 (현재 관로구분 '{state.pipe_condition or '미선택'}')"
+        )
+        return {}
+
     ok, why = defect_filter.availability()
     if not ok:
         # 필터는 보조 장치다. 없다고 분석을 멈추지 않고 알리기만 한다.
@@ -214,11 +223,22 @@ def _run_batch_thread():
             probs = _run_filter(frames, path.name)
             yolo_frames = frames
             if probs and FILTER_MODE == "series":
+                # 판정을 못 받은 프레임(읽기 실패 등)은 통과시킨다. 필터가 조용히
+                # 버리는 것보다 YOLO가 한 번 더 보는 편이 안전하다.
                 yolo_frames = [f for f in frames if probs.get(str(f), 1.0) >= FILTER_THRESHOLD]
+                dropped = [f for f in frames if f not in set(yolo_frames)]
                 ws_manager.log(
                     f" - Filter(series): {len(yolo_frames)}/{len(frames)} frames pass "
-                    f"→ {len(frames) - len(yolo_frames)} skipped"
+                    f"→ {len(dropped)} skipped (threshold {FILTER_THRESHOLD})"
                 )
+                # 직렬은 되돌릴 수 없다. 어느 구간이 사라졌는지 흔적을 남긴다.
+                if dropped:
+                    secs = sorted(int(Path(f).stem) for f in dropped if Path(f).stem.isdigit())
+                    v_data["filter_skipped"] = secs
+                    ws_manager.log(
+                        f"   skipped at: {', '.join(seconds_to_mmss(s) for s in secs[:12])}"
+                        + (f" … 외 {len(secs) - 12}곳" if len(secs) > 12 else "")
+                    )
 
             ws_manager.progress(path.name, idx + 1, total, "yolo")
             if state.remote_yolo_url:
