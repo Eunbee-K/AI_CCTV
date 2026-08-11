@@ -56,7 +56,7 @@ def main():
     args = ap.parse_args()
 
     root = Path(args.data)
-    with open(root / "manifest.csv", encoding="utf-8") as f:
+    with open(root / "manifest.csv", encoding="utf-8-sig") as f:
         rows = [r for r in csv.DictReader(f) if (root / r["dst"]).exists()]
     print(f"{len(rows):,}장 해시 계산 중...")
 
@@ -67,9 +67,15 @@ def main():
     ok = [(r, h) for r, h in zip(rows, hashes) if h >= 0]
     print(f"  해시 완료 {len(ok):,}장 (실패 {len(rows) - len(ok)})")
 
-    # 출처별로 나눠서 본다. AIHub만 영상 단위 분할을 못 했다.
-    for source_label, keep in (("AIHub", lambda r: r["source"] == "aihub"),
-                               ("S20/S22", lambda r: r["source"] != "aihub")):
+    # 데이터셋마다 묶는 기준이 다르다(출처/지역). 있는 컬럼을 쓰고, 없으면 전체를 한 덩어리로.
+    group_col = next((c for c in ("source", "area") if c in rows[0]), None)
+    if group_col:
+        groups = sorted({r[group_col] for r in rows})
+        buckets = [(g, (lambda g: (lambda r: r[group_col] == g))(g)) for g in groups]
+    else:
+        buckets = [("전체", lambda r: True)]
+
+    for source_label, keep in buckets:
         tr = np.array([h for r, h in ok if keep(r) and r["split"] == "train"], dtype=np.uint64)
         va = [(r, h) for r, h in ok if keep(r) and r["split"] == "val"]
         if not len(tr) or not va:

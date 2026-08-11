@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
 import math
 import time
@@ -63,16 +64,37 @@ class FrameDataset(Dataset):
 
     def __getitem__(self, i):
         path, label, _ = self.samples[i]
-        return self.tf(Image.open(path).convert("RGB")), label
+        # 외장드라이브는 동시 접근에서 간헐적으로 OSError(22)를 낸다. 파일은 멀쩡하므로
+        # 잠깐 쉬었다 다시 연다. Colab 로컬 디스크에서는 걸리지 않는 경로다.
+        for attempt in range(5):
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+                return self.tf(Image.open(io.BytesIO(data)).convert("RGB")), label
+            except OSError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
 
 
 def load_manifest(root: Path) -> dict[str, str]:
-    """저장 경로 -> 결함코드. 코드별 성능을 따로 보기 위해 필요하다."""
+    """저장 경로 -> 묶음 이름. 묶음별 성능을 따로 보기 위해 필요하다.
+
+    clsdata_v1은 결함코드(`code`)로, 현장 데이터셋(clsdata_v2)은 관로(`pipe`)로
+    묶는다. 관로별로 보면 어느 현장에서 실패하는지가 드러난다.
+    없으면 빈 dict — 묶음별 보고만 빠지고 학습은 그대로 돈다.
+    """
     path = root / "manifest.csv"
     if not path.exists():
         return {}
-    with open(path, encoding="utf-8") as f:
-        return {r["dst"]: r["code"] for r in csv.DictReader(f)}
+    with open(path, encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        return {}
+    key = "code" if "code" in rows[0] else ("pipe" if "pipe" in rows[0] else None)
+    if key is None:
+        return {}
+    return {r["dst"]: r[key] for r in rows}
 
 
 def build_model(arch: str):
@@ -109,6 +131,30 @@ def make_sampler(samples):
     return WeightedRandomSampler(weights, num_samples=len(samples), replacement=True)
 
 
+def _roc_auc(pos: list[float], neg: list[float]) -> float:
+    """양성 점수가 음성보다 높을 확률(Mann-Whitney U). 임계값과 무관하다.
+
+    eval_binary.py에도 같은 함수가 있지만 그쪽이 이 파일을 import 하므로,
+    순환 import를 피하려고 여기 따로 둔다.
+    """
+    scored = sorted([(s, 1) for s in pos] + [(s, 0) for s in neg])
+    ranks, i = {}, 0
+    vals = [s for s, _ in scored]
+    while i < len(vals):
+        j = i
+        while j + 1 < len(vals) and vals[j + 1] == vals[i]:
+            j += 1
+        avg = (i + j) / 2 + 1          # 동점은 평균 순위
+        for k in range(i, j + 1):
+            ranks[k] = avg
+        i = j + 1
+    rank_sum = sum(ranks[k] for k, (_, lab) in enumerate(scored) if lab == 1)
+    n_pos, n_neg = len(pos), len(neg)
+    if not n_pos or not n_neg:
+        return 0.0
+    return (rank_sum - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
+
+
 @torch.no_grad()
 def evaluate(model, loader, device, samples):
     model.eval()
@@ -141,6 +187,12 @@ def evaluate(model, loader, device, samples):
         kept = (probs >= thr).float().mean().item()
         thresholds[target] = (thr, 1 - kept)
 
+    # 임계값과 무관한 판별력. best 체크포인트는 이걸로 고른다 — F1은 임계값 0.5
+    # 한 점에서만 잰 값이라, F1이 높아도 순위를 잘 못 매기는 경우가 있다.
+    pos_l = probs[labels == 1].tolist()
+    neg_l = probs[labels == 0].tolist()
+    auc = _roc_auc(pos_l, neg_l) if pos_l and neg_l else 0.0
+
     # 결함 코드별 recall — 어떤 결함 유형을 놓치는지가 Stage-1의 핵심 지표
     by_code = defaultdict(lambda: [0, 0])
     for (_, label, code), p in zip(samples, probs.tolist()):
@@ -151,7 +203,7 @@ def evaluate(model, loader, device, samples):
     code_recall = {c: hit / tot for c, (hit, tot) in sorted(by_code.items())}
 
     return {
-        "acc": acc, "precision": prec, "recall": rec, "f1": f1,
+        "acc": acc, "precision": prec, "recall": rec, "f1": f1, "auc": auc,
         "tp": tp, "fp": fp, "fn": fn, "tn": tn,
         "thresholds": thresholds, "code_recall": code_recall,
     }
@@ -167,6 +219,9 @@ def main():
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--img", type=int, default=224)
+    ap.add_argument("--init", default="", help="이 체크포인트의 가중치에서 시작(백본 재사용)")
+    ap.add_argument("--reset-head", action="store_true",
+                    help="--init과 함께. 분류층만 초기화한다")
     args = ap.parse_args()
 
     root, out = Path(args.data), Path(args.out)
@@ -200,21 +255,41 @@ def main():
         num_workers=args.workers, pin_memory=True,
     )
 
-    model = build_model(args.arch).to(device)
+    model = build_model(args.arch)
+    if args.init:
+        # 큰 데이터로 배운 백본을 재사용하고 현장 데이터로 파인튜닝한다.
+        # v1 모델은 백본이 아니라 마지막 분류층이 "관 밖=정상, 관 안=결함"이라는
+        # 잘못된 매핑을 외운 상태라, --reset-head로 그 층만 다시 시작할 수 있다.
+        ck = torch.load(args.init, map_location="cpu", weights_only=False)
+        sd = ck.get("model", ck)
+        if args.reset_head:
+            fresh = build_model(args.arch).state_dict()
+            for k in list(sd):
+                if k.startswith("classifier."):
+                    sd[k] = fresh[k]
+        missing, unexpected = model.load_state_dict(sd, strict=False)
+        print(f"가중치 이어받음: {args.init} (epoch {ck.get('epoch', '?')})"
+              f"{' · 분류층 초기화' if args.reset_head else ''}")
+        if missing or unexpected:
+            print(f"  맞지 않는 키 — 없음 {len(missing)}, 남음 {len(unexpected)}")
+    model = model.to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
     scaler = torch.amp.GradScaler(device.type, enabled=device.type == "cuda")
     crit = nn.CrossEntropyLoss(label_smoothing=0.05)
 
-    start_epoch, best_f1 = 0, 0.0
+    # best 체크포인트는 AUC로 고른다. F1은 임계값 0.5 한 점에서만 잰 값이라,
+    # 필터로 쓸 때 중요한 "순위를 얼마나 잘 매기는가"를 반영하지 못한다.
+    start_epoch, best_auc = 0, 0.0
     ckpt_path = out / "last.pt"
     if ckpt_path.exists():  # Colab 세션이 끊겼을 때 이어받기
         ck = torch.load(ckpt_path, map_location=device)
         model.load_state_dict(ck["model"])
         opt.load_state_dict(ck["opt"])
         sched.load_state_dict(ck["sched"])
-        start_epoch, best_f1 = ck["epoch"] + 1, ck.get("best_f1", 0.0)
-        print(f"이어서 학습: epoch {start_epoch}부터 (best_f1={best_f1:.4f})")
+        start_epoch = ck["epoch"] + 1
+        best_auc = ck.get("best_auc", ck.get("best_f1", 0.0))
+        print(f"이어서 학습: epoch {start_epoch}부터 (best_auc={best_auc:.4f})")
 
     for epoch in range(start_epoch, args.epochs):
         model.train()
@@ -236,7 +311,8 @@ def main():
         m = evaluate(model, val_ld, device, val_ds.samples)
         print(
             f"[epoch {epoch}] loss {run_loss / max(seen,1):.4f} | "
-            f"acc {m['acc']:.4f} P {m['precision']:.4f} R {m['recall']:.4f} F1 {m['f1']:.4f} "
+            f"AUC {m['auc']:.4f} acc {m['acc']:.4f} P {m['precision']:.4f} "
+            f"R {m['recall']:.4f} F1 {m['f1']:.4f} "
             f"| {time.time() - t0:.0f}s"
         )
         for target, (thr, cut) in m["thresholds"].items():
@@ -247,18 +323,19 @@ def main():
         ck = {
             "model": model.state_dict(), "opt": opt.state_dict(),
             "sched": sched.state_dict(), "epoch": epoch,
-            "best_f1": max(best_f1, m["f1"]), "arch": args.arch, "img": args.img,
+            "best_auc": max(best_auc, m["auc"]), "f1": m["f1"],
+            "arch": args.arch, "img": args.img,
         }
         torch.save(ck, ckpt_path)
-        if m["f1"] > best_f1:
-            best_f1 = m["f1"]
+        if m["auc"] > best_auc:
+            best_auc = m["auc"]
             torch.save(ck, out / "best.pt")
             (out / "best_metrics.json").write_text(
                 json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             print(f"    best 갱신 → {out / 'best.pt'}")
 
-    print(f"\n완료. best F1 {best_f1:.4f} → {out / 'best.pt'}")
+    print(f"\n완료. best AUC {best_auc:.4f} → {out / 'best.pt'}")
 
 
 if __name__ == "__main__":
