@@ -6,11 +6,21 @@ from pydantic import BaseModel
 from fastapi import HTTPException
 
 from .. import session_store
+from ..config import DEFECT_CODE_KO
 from ..state import (PIPE_META_FIELDS, PROJECT_META_FIELDS, REPORT_META_FIELDS,
                      REPORT_META_SPEC, state)
 from ..yolo_remote import normalize_remote_url, probe_remote
 
 router = APIRouter(prefix="/api/config", tags=["config"])
+
+
+@router.get("/defect_codes")
+def get_defect_codes():
+    """결함 코드 목록. 결과표의 [결함항목] 콤보박스가 이걸로 채워진다.
+
+    표기는 "CC(균열-원주)" 형태로 보여주고 저장은 코드만 한다.
+    """
+    return {"codes": [{"code": c, "ko": ko} for c, ko in DEFECT_CODE_KO.items()]}
 
 
 class RemoteUrlBody(BaseModel):

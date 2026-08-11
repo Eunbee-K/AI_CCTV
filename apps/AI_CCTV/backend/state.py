@@ -129,6 +129,23 @@ class AppState:
         v = self.video_data_map.get(video_name) or {}
         return {**self.project_meta, **(v.get("meta") or PIPE_META_FIELDS)}
 
+    def site_name_of(self, video_name: str) -> str:
+        """그 관로의 현장명. 영상별로 따로 두되, 없으면 전체 현장명으로 채운다.
+
+        한 번에 여러 현장의 영상을 돌리는 경우가 있어 전역 하나로는 부족하다.
+        """
+        v = self.video_data_map.get(video_name) or {}
+        return (v.get("site_name") or "").strip() or self.site_name
+
+    def set_site_name_of(self, video_name: str, value: str) -> None:
+        v = self.video_data_map.get(video_name)
+        if v is None:
+            return
+        v["site_name"] = (value or "").strip()
+        # 아직 전역이 비어 있으면 첫 입력을 기본값으로 삼는다(대개 같은 현장이다)
+        if not self.site_name:
+            self.site_name = v["site_name"]
+
     def pipe_meta(self, video_name: str) -> Dict[str, str]:
         """관로별 항목 dict. 예전 세션에서 복원된 영상이면 없을 수 있어 만들어준다."""
         v = self.video_data_map.setdefault(video_name, {})
@@ -139,6 +156,43 @@ class AppState:
     def clear_videos(self):
         self.video_queue.clear()
         self.video_data_map.clear()
+
+    def reset_all(self, purge_files: bool = True) -> dict:
+        """작업을 처음 상태로 되돌린다. 반환값은 무엇을 얼마나 지웠는지 요약.
+
+        영상 목록·결함 행뿐 아니라 현장명/야장 항목까지 비운다. 다음 현장에
+        지난 현장 정보가 남아 있으면 보고서에 그대로 섞여 들어가기 때문이다.
+        추론 설정(모델·원격주소)은 작업물이 아니므로 건드리지 않는다.
+        """
+        import shutil
+
+        summary = {
+            "videos": len(self.video_data_map),
+            "rows": sum(len(v.get("rows") or []) for v in self.video_data_map.values()),
+            "frames": 0,
+            "uploads": 0,
+        }
+
+        self.clear_videos()
+        self.site_name = ""
+        self.pipe_condition = ""
+        self.project_meta = dict(PROJECT_META_FIELDS)
+
+        if purge_files:
+            for root, key in ((self.frames_root, "frames"), (self.uploads_root, "uploads")):
+                if not root.exists():
+                    continue
+                for child in root.iterdir():
+                    try:
+                        if child.is_dir():
+                            summary[key] += sum(1 for _ in child.rglob("*") if _.is_file())
+                            shutil.rmtree(child, ignore_errors=True)
+                        else:
+                            child.unlink()
+                            summary[key] += 1
+                    except OSError:
+                        pass   # 재생 중이라 잠긴 파일은 건너뛴다 — 나머지는 계속 지운다
+        return summary
 
     def get_path_by_name(self, name: str) -> Optional[Path]:
         return next((p for p in self.video_queue if p.name == name), None)

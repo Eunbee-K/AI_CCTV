@@ -29,6 +29,12 @@ let pinnedBoxes = null;
 let detectionPassCb = null;
 let lastPassKey = null;
 
+// 영상이 바뀌면 결과표를 그 영상 것으로 다시 불러와야 한다 (results-table이 구독).
+let videoChangeCb = null;
+export function onVideoChange(cb) {
+  videoChangeCb = cb;
+}
+
 export function onDetectionPass(cb) {
   detectionPassCb = cb;
 }
@@ -151,6 +157,7 @@ export async function selectVideo(name) {
   [...videoListEl.children].forEach((li) =>
     li.classList.toggle("selected", li.dataset.name === name)
   );
+  if (videoChangeCb) await videoChangeCb(name);
 }
 
 export function seek(t) {

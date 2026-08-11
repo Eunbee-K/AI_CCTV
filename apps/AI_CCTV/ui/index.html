@@ -135,6 +135,7 @@
           <button id="btnDelRow" class="clean-btn">- 행 삭제</button>
           <button id="btnReportMeta" class="clean-btn">보고서 정보</button>
           <button id="btnExport" class="clean-btn">보고서 출력</button>
+          <button id="btnReset" class="clean-btn danger">초기화</button>
         </div>
       </div>
 
@@ -153,6 +154,19 @@
   <!-- 출력 형식 선택 -->
   <dialog id="dlgExport" class="dlg">
     <h3 class="dlg-title">보고서 출력</h3>
+
+    <p class="dlg-sub">어느 범위로 뽑을지 고르세요.</p>
+    <div class="scope-list">
+      <label class="scope-item">
+        <input type="radio" name="exportScope" value="current" checked />
+        <span><b>선택한 영상만</b><em id="exportScopeCur">— 지금 보고 있는 관로</em></span>
+      </label>
+      <label class="scope-item">
+        <input type="radio" name="exportScope" value="all" />
+        <span><b>분석한 전체</b><em id="exportScopeAll">— 이번에 분석한 관로를 한 파일로</em></span>
+      </label>
+    </div>
+
     <p class="dlg-sub">어떤 형식으로 내려받을지 선택하세요.</p>
     <div class="fmt-list">
       <button class="fmt" data-fmt="xlsx">

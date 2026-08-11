@@ -1,5 +1,8 @@
 import { api } from "./api.js";
-import { selectVideo, showDetectionFrame, getCurrentVideo, setDetections, onDetectionPass } from "./player.js";
+import {
+  selectVideo, showDetectionFrame, getCurrentVideo, setDetections,
+  onDetectionPass, onVideoChange,
+} from "./player.js";
 import {
   rowVisible, onFilterChange, setKnownClasses, getKnownClasses,
   isClassEnabled, toggleClass, setConfMin,
@@ -12,6 +15,12 @@ const confVal = document.getElementById("confVal");
 
 const openGroups = new Set(); // "video|dist" keys currently expanded
 const selected = new Set(); // "video|time_s" keys currently selected for deletion
+
+// 커서와 선택은 다른 개념이다. 예전에는 selected 하나로 둘 다 처리해서,
+// 그룹을 펼치기만 해도(커서 유지 목적) 그룹 전체가 삭제 대상이 됐다
+// — [- 행 삭제]를 누르면 그 거리의 행이 통째로 날아갔다.
+let cursorKey = null;  // 키보드(↑↓·Enter)가 가리키는 위치. 삭제와 무관.
+let anchorKey = null;  // Shift+클릭 범위 선택의 시작점.
 
 let lastData = null; // 마지막 결과 (필터 재적용/통계용)
 
@@ -67,11 +76,79 @@ async function commitEdit(row, colIdx, newValue) {
   await refreshResults();
 }
 
+// 결함 코드 목록 (서버에서 한 번 받아 캐시). [{code, ko}, ...]
+let defectCodes = [];
+export async function loadDefectCodes() {
+  try {
+    const r = await api.getDefectCodes();
+    defectCodes = r.codes || [];
+  } catch (_) {
+    defectCodes = [];
+  }
+}
+
+/** 결함항목 셀 편집 — 코드 목록 드롭다운. '기타'를 고르면 직접 입력으로 바뀐다. */
+function editDefectsCell(td, row) {
+  const current = (row.defects || []).join(", ");
+  td.textContent = "";
+
+  const sel = document.createElement("select");
+  sel.className = "cell-edit defect-select";
+  const blank = new Option("(없음)", "");
+  sel.appendChild(blank);
+  for (const { code, ko } of defectCodes) {
+    sel.appendChild(new Option(ko && ko !== code ? `${code} (${ko})` : code, code));
+  }
+  sel.appendChild(new Option("기타 — 직접 입력…", "__other__"));
+
+  // 지금 값이 목록에 하나로 딱 들어맞으면 그걸 고르고, 아니면 직접 입력으로 시작
+  const only = (row.defects || []).length === 1 ? row.defects[0] : "";
+  const known = only && defectCodes.some((d) => d.code === only);
+  sel.value = known ? only : (current ? "__other__" : "");
+  td.appendChild(sel);
+
+  let input = null;
+  const showInput = () => {
+    if (input) return;
+    input = document.createElement("input");
+    input.className = "cell-edit";
+    input.value = current;
+    input.title = "여러 개면 쉼표로 구분 (예: BK, DS)";
+    td.appendChild(input);
+    input.focus();
+    input.select();
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") commitEdit(row, COL_DEFECTS, input.value);
+      if (ev.key === "Escape") refreshResults();
+    });
+    input.addEventListener("blur", () => commitEdit(row, COL_DEFECTS, input.value), { once: true });
+  };
+
+  if (sel.value === "__other__") showInput();
+  sel.focus();
+
+  sel.addEventListener("change", () => {
+    if (sel.value === "__other__") showInput();
+    else commitEdit(row, COL_DEFECTS, sel.value);
+  });
+  sel.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") refreshResults();
+  });
+  // 드롭다운만 두고 다른 데를 누르면 편집 취소 (직접 입력 중이면 그쪽이 처리)
+  sel.addEventListener("blur", () => {
+    if (!input) setTimeout(() => { if (!input) refreshResults(); }, 150);
+  });
+}
+
 function makeCellEditable(td, row, colIdx) {
   td.addEventListener("dblclick", (e) => {
     e.stopPropagation();
-    if (READONLY_COLS.has(colIdx)) return;   // 순번/시간/결함명/오탐은 편집 불가
-    if (td.querySelector("input")) return;
+    if (READONLY_COLS.has(colIdx)) return;   // 순번/시간/등급은 여기서 편집하지 않는다
+    if (td.querySelector("input, select")) return;
+    if (colIdx === COL_DEFECTS) {
+      editDefectsCell(td, row);
+      return;
+    }
     const original = cellValue(row, colIdx);
     td.textContent = "";
     const input = document.createElement("input");
@@ -148,10 +225,7 @@ function buildRowTr(row, extraClass, inGroup) {
 
   tr.addEventListener("click", (e) => {
     if (e.target.tagName === "INPUT") return;
-    if (!e.ctrlKey && !e.metaKey) selected.clear();
-    if (selected.has(key)) selected.delete(key);
-    else selected.add(key);
-    syncSelectionClasses();
+    handleSelectClick(e, key);
     activateRow(row);
   });
 
@@ -164,9 +238,42 @@ function buildRowTr(row, extraClass, inGroup) {
 function toggleGroup(groupKey) {
   if (openGroups.has(groupKey)) openGroups.delete(groupKey);
   else openGroups.add(groupKey);
-  selected.clear();
-  selected.add(`group:${groupKey}`);   // 토글 후에도 Enter로 계속 조작할 수 있게 선택 유지
+  // 펼치기·접기는 '보기'일 뿐이므로 선택을 건드리지 않는다.
+  // 커서만 옮겨서 Enter로 계속 조작할 수 있게 한다.
+  cursorKey = `group:${groupKey}`;
   if (lastData) renderResults(lastData);
+}
+
+/** 화면에 보이는 순서대로 두 지점 사이를 전부 선택 (Shift+클릭). */
+function selectRange(fromKey, toKey) {
+  const trs = visibleNavTrs();
+  const a = trs.findIndex((tr) => navKeyOf(tr) === fromKey);
+  const b = trs.findIndex((tr) => navKeyOf(tr) === toKey);
+  if (a === -1 || b === -1) return false;
+  selected.clear();
+  for (let i = Math.min(a, b); i <= Math.max(a, b); i++) {
+    selected.add(navKeyOf(trs[i]));
+  }
+  return true;
+}
+
+/** 행/그룹 클릭 공통 처리. 일반=단일선택, Ctrl=토글, Shift=범위. */
+function handleSelectClick(e, key) {
+  if (e.shiftKey && anchorKey && selectRange(anchorKey, key)) {
+    cursorKey = key;
+    syncSelectionClasses();
+    return;
+  }
+  if (e.ctrlKey || e.metaKey) {
+    if (selected.has(key)) selected.delete(key);
+    else selected.add(key);
+  } else {
+    selected.clear();
+    selected.add(key);
+  }
+  anchorKey = key;
+  cursorKey = key;
+  syncSelectionClasses();
 }
 
 function syncSelectionClasses() {
@@ -205,9 +312,10 @@ onFilterChange(() => {
 
 // ───────── 렌더링 ─────────
 
-function collectRows(data) {
+/** display(선택 영상만) 또는 display_all(전 영상)에서 실제 행만 추려낸다. */
+function collectRows(data, key = "display") {
   const rows = [];
-  for (const item of data.display) {
+  for (const item of data[key] || data.display || []) {
     if (item.type === "row") rows.push(item);
     else if (item.type === "group") rows.push(...item.children);
   }
@@ -294,19 +402,16 @@ export function renderResults(data) {
         toggleGroup(groupKey);
       });
       tr.addEventListener("click", (e) => {
-        if (!e.ctrlKey && !e.metaKey) selected.clear();
-        const gSelKey = `group:${groupKey}`;
-        if (selected.has(gSelKey)) selected.delete(gSelKey);
-        else selected.add(gSelKey);
-        syncSelectionClasses();
-        tr.classList.toggle("row-selected", selected.has(gSelKey));
+        handleSelectClick(e, `group:${groupKey}`);
       });
       tbody.appendChild(tr);
 
-      for (const child of item.children) {
-        const childTr = buildRowTr(child, isOpen ? "" : "row-hidden", true);
-        tbody.appendChild(childTr);
-      }
+      item.children.forEach((child, ci) => {
+        const cls = [isOpen ? "" : "row-hidden"];
+        // 펼친 그룹의 마지막 행에 아래 경계선을 그려 다음 결함과 끊어 보이게 한다
+        if (isOpen && ci === item.children.length - 1) cls.push("is-group-last");
+        tbody.appendChild(buildRowTr(child, cls.join(" ").trim(), true));
+      });
     }
   }
 
@@ -320,7 +425,8 @@ function renderStats(data) {
   const body = document.getElementById("statsBody");
   if (!head || !body) return;
 
-  const rows = collectRows(data).filter((r) => !r.fp);
+  // 통계는 현장 전체를 봐야 하므로 선택 영상 필터가 걸리지 않은 쪽을 쓴다
+  const rows = collectRows(data, "display_all").filter((r) => !r.fp);
   const classes = [...new Set(rows.flatMap((r) => r.defects))].sort();
   const byVideo = {};
   for (const r of rows) {
@@ -391,9 +497,17 @@ function navKeyOf(tr) {
     : rowKey(tr.dataset.video, Number(tr.dataset.timeS));
 }
 
-function selectNavTr(tr) {
-  selected.clear();
-  selected.add(navKeyOf(tr));
+function selectNavTr(tr, extend) {
+  const key = navKeyOf(tr);
+  // Shift+↑↓ 로도 범위를 넓힐 수 있게 한다 (Shift+클릭과 같은 규칙)
+  if (extend && anchorKey && selectRange(anchorKey, key)) {
+    cursorKey = key;
+  } else {
+    selected.clear();
+    selected.add(key);
+    anchorKey = key;
+    cursorKey = key;
+  }
   syncSelectionClasses();
   tr.scrollIntoView({ block: "nearest" });
 
@@ -421,15 +535,15 @@ document.addEventListener("keydown", (e) => {
     if (!trs.length) return;
     e.preventDefault();
 
-    const idx = trs.findIndex((tr) => selected.has(navKeyOf(tr)));
+    const idx = trs.findIndex((tr) => navKeyOf(tr) === cursorKey);
     const nextIdx = e.key === "ArrowDown" ? Math.min(trs.length - 1, idx + 1) : Math.max(0, idx - 1);
-    selectNavTr(trs[nextIdx]);
+    selectNavTr(trs[nextIdx], e.shiftKey);
     return;
   }
 
   if (e.key === "Enter") {
     const trs = visibleNavTrs();
-    const tr = trs.find((t) => selected.has(navKeyOf(t)));
+    const tr = trs.find((t) => navKeyOf(t) === cursorKey);
     if (!tr || !tr.classList.contains("row-group-parent")) return;
     e.preventDefault();
 
@@ -465,19 +579,43 @@ onDetectionPass((video, timeS) => {
     renderResults(lastData);
   }
 
+  const key = rowKey(video, timeS);
   selected.clear();
-  selected.add(rowKey(video, timeS));
+  selected.add(key);
+  anchorKey = key;
+  cursorKey = key;
   syncSelectionClasses();
   const tr = tbody.querySelector(`tr[data-video="${CSS.escape(video)}"][data-time-s="${timeS}"]`);
   if (tr) tr.scrollIntoView({ block: "nearest" });
 });
 
+// 영상을 바꾸면 그 영상의 결과로 표를 다시 채운다.
+// (selectVideo -> onVideoChange -> refreshResults)
+let refreshing = false;
+onVideoChange(async () => {
+  if (refreshing) return;   // 표 안에서 영상이 바뀌는 경우의 재진입 방지
+  await refreshResults();
+});
+
 export async function refreshResults() {
-  const data = await api.getResults();
+  if (refreshing) return;
+  refreshing = true;
+  try {
+    return await _refreshResults();
+  } finally {
+    refreshing = false;
+  }
+}
+
+async function _refreshResults() {
+  // 결과표에는 선택한 영상 것만 담아온다. 여러 관로가 한 줄로 이어지면
+  // 어느 관로의 결함인지 알 수 없고, 보고서 정보도 섞인다.
+  const data = await api.getResults(getCurrentVideo());
   renderResults(data);
   const statusEl = document.getElementById("status");
   statusEl.textContent = data.analyzing ? "AI 분석중..." : "분석대기";
 
+  // 현장명도 관로별 값이다 (한 번에 여러 현장을 돌리는 경우가 있다)
   const siteInput = document.getElementById("siteName");
   if (document.activeElement !== siteInput) siteInput.value = data.site_name || "";
 
@@ -519,5 +657,7 @@ export async function deleteSelected() {
   }
   await Promise.all([...groupDeletes, ...rowDeletes]);
   selected.clear();
+  anchorKey = null;
+  cursorKey = null;
   await refreshResults();
 }

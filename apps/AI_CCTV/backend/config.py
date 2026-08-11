@@ -35,8 +35,12 @@ SESSION_FILE = DATA_DIR / "session.json"
 YOLO_MODEL_PATH = Path(os.getenv("YOLO_MODEL_PATH", str(resource_path("assets/best.pt"))))
 # Colab 원격 추론 서버 기본 주소 (ngrok 고정 도메인). 빈 문자열이면 로컬 CPU 추론.
 REMOTE_YOLO_URL = os.getenv("REMOTE_YOLO_URL", "https://financial-elitism-ebook.ngrok-free.dev")
-YOLO_CONF = float(os.getenv("YOLO_CONF", "0.35"))
+YOLO_CONF = float(os.getenv("YOLO_CONF", "0.10"))
 YOLO_IMGSZ = int(os.getenv("YOLO_IMGSZ", "960"))
+# 로컬 추론에서 한 번에 모델에 넘기는 프레임 수. 리스트를 통째로 넘기면
+# ultralytics가 전부 한 배치로 올려 수 GB를 요구한다(112장 → 3.7GB 할당 실패).
+# 원격 경로의 REMOTE_CHUNK_SIZE와 같은 취지.
+YOLO_CHUNK_SIZE = int(os.getenv("YOLO_CHUNK_SIZE", "8"))
 YOLO_IGNORE_CLASSES = {
     x.strip().lower()
     for x in os.getenv("YOLO_IGNORE_CLASSES", "normal,none,background,ok").split(",")

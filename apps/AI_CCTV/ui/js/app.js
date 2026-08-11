@@ -1,7 +1,7 @@
 import { api } from "./api.js";
 import { connectWs, on } from "./ws.js";
 import { renderQueue, getCurrentVideo, getCurrentTime, selectVideo } from "./player.js";
-import { refreshResults, deleteSelected, getSelectedCount } from "./results-table.js";
+import { refreshResults, deleteSelected, getSelectedCount, loadDefectCodes } from "./results-table.js";
 
 const logConsole = document.getElementById("logConsole");
 const statusEl = document.getElementById("status");
@@ -252,9 +252,17 @@ async function init() {
       return;
     }
     try {
-      await api.addManualRow(video, getCurrentTime());
+      // 행이 선택돼 있든 말든 현재 재생 위치에 추가한다. 그 초가 이미 차 있으면
+      // 서버가 가장 가까운 빈 초로 옮겨 넣고 실제 위치를 알려준다.
+      const r = await api.addManualRow(video, getCurrentTime());
       await refreshResults();
-      appendLog({ level: "INFO", msg: `행 추가: ${video} ${getCurrentTime()}초` });
+      const mmss = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+      appendLog({
+        level: "INFO",
+        msg: r.moved
+          ? `행 추가: ${video} ${mmss(r.time_s)} (${mmss(getCurrentTime())}는 이미 있어 옮김)`
+          : `행 추가: ${video} ${mmss(r.time_s)}`,
+      });
     } catch (e) {
       alert(`행 추가 실패: ${e.message}`);
     }
@@ -262,7 +270,10 @@ async function init() {
 
   document.getElementById("btnDelRow").addEventListener("click", async () => {
     if (!getSelectedCount()) {
-      alert("삭제할 행을 먼저 선택하세요.\n(행을 클릭해서 선택 · Ctrl+클릭으로 여러 개 선택)");
+      alert("삭제할 행을 먼저 선택하세요.\n\n"
+        + "· 클릭: 한 행 선택\n"
+        + "· Ctrl+클릭: 하나씩 추가/해제\n"
+        + "· Shift+클릭: 앞서 고른 행부터 여기까지 한 번에 선택");
       return;
     }
     try {
@@ -272,30 +283,75 @@ async function init() {
     }
   });
 
+  // ── 초기화: 영상·결함·현장정보를 모두 비운다 (되돌릴 수 없음) ──
+  document.getElementById("btnReset").addEventListener("click", async () => {
+    const ok = confirm(
+      "지금까지의 작업을 모두 지웁니다.\n\n"
+      + "· 영상 목록과 분석 결과\n"
+      + "· 현장명·보고서 정보\n"
+      + "· 저장된 프레임 이미지와 업로드 영상\n\n"
+      + "되돌릴 수 없습니다. 계속할까요?"
+    );
+    if (!ok) return;
+    try {
+      const r = await api.resetAll();
+      appendLog({
+        level: "INFO",
+        msg: `초기화 완료 — 영상 ${r.videos}개 / 결함 ${r.rows}행 / 프레임 ${r.frames}장 삭제`,
+      });
+      window.location.reload();   // 남은 화면 상태(선택 영상·재생기)까지 깨끗이
+    } catch (e) {
+      alert(`초기화 실패: ${e.message}`);
+    }
+  });
+
   // ── 보고서 출력: 형식(엑셀 / 파이프에셋 PDF) 선택 후 다운로드 ──
   const dlgExport = document.getElementById("dlgExport");
-  document.getElementById("btnExport").addEventListener("click", () => dlgExport.showModal());
+  document.getElementById("btnExport").addEventListener("click", async () => {
+    // 범위 선택지에 지금 상태를 적어준다 — 무엇이 나올지 열자마자 보이게
+    const cur = getCurrentVideo();
+    const data = await api.getResults(cur);
+    const n = (data.videos || []).length;
+    document.getElementById("exportScopeCur").textContent =
+      cur ? `— ${cur}` : "— (선택된 영상 없음)";
+    document.getElementById("exportScopeAll").textContent =
+      `— 관로 ${n}개를 한 파일로`;
+    const curRadio = document.querySelector('input[name="exportScope"][value="current"]');
+    curRadio.disabled = !cur;
+    if (!cur) document.querySelector('input[name="exportScope"][value="all"]').checked = true;
+    dlgExport.showModal();
+  });
   document.getElementById("btnExportCancel").addEventListener("click", () => dlgExport.close());
+
+  /** 선택한 출력 범위. "선택한 영상만"이면 그 영상명, "전체"면 null. */
+  function exportScopeVideo() {
+    const sel = document.querySelector('input[name="exportScope"]:checked');
+    return sel && sel.value === "current" ? getCurrentVideo() : null;
+  }
 
   async function runExport(fmt) {
     dlgExport.close();
     const btn = document.getElementById("btnExport");
     btn.disabled = true;
+    const video = exportScopeVideo();
+    const scopeLabel = video ? `[${video}]` : "[전체]";
     const label = fmt === "pdf" ? "파이프에셋 야장(PDF)" : "엑셀 조사표";
     try {
       if (fmt === "xlsx" && window.__hasPywebview) {
         // 데스크톱(exe): 네이티브 저장 대화상자로 로컬 경로를 직접 고른다
         const path = await window.pywebview.api.save_excel_dialog();
         if (!path) return;
-        await api.exportExcel(path);
-        appendLog({ level: "INFO", msg: `보고서 저장: ${path}` });
+        await api.exportExcel(path, video);
+        appendLog({ level: "INFO", msg: `보고서 저장 ${scopeLabel}: ${path}` });
         alert(`저장되었습니다.\n\n${path}`);
         return;
       }
       // 웹: 브라우저가 내려받는다(저장 위치는 브라우저 설정/저장 대화상자가 결정).
       // 서버 경로에 저장하면 접속한 사람 PC가 아니라 서버에 파일이 생긴다.
-      appendLog({ level: "INFO", msg: `${label} 생성 중…` });
-      const name = fmt === "pdf" ? await api.downloadPipeassetPdf() : await api.downloadExcel();
+      appendLog({ level: "INFO", msg: `${label} ${scopeLabel} 생성 중…` });
+      const name = fmt === "pdf"
+        ? await api.downloadPipeassetPdf(video)
+        : await api.downloadExcel(video);
       appendLog({ level: "INFO", msg: `${label} 다운로드: ${name}` });
     } catch (e) {
       appendLog({ level: "ERROR", msg: `${label} 출력 실패: ${e.message}` });
@@ -438,8 +494,9 @@ async function init() {
     }
   });
 
+  // 현장명은 선택한 관로에 저장한다. 아무 영상도 안 골랐으면 현장 전체 기본값이 된다.
   siteNameEl.addEventListener("change", () => {
-    api.setSiteName(siteNameEl.value);
+    api.setSiteName(siteNameEl.value, getCurrentVideo() || null);
   });
 
   // 관로 구분(신설/노후) — 체크박스지만 둘 중 하나만 켜지게 한다(라디오처럼).
@@ -545,6 +602,7 @@ async function init() {
     });
   });
 
+  await loadDefectCodes();   // 결함항목 콤보박스 목록 (표를 그리기 전에 받아둔다)
   await refreshQueue();
   await refreshResults();
 }

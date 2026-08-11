@@ -85,8 +85,10 @@ export const api = {
 
   runAnalysis: () => req("POST", "/api/analysis/run"),
 
-  getResults: () => req("GET", "/api/results"),
-  setSiteName: (value) => req("POST", "/api/results/site_name", { value }),
+  getResults: (video) =>
+    req("GET", "/api/results" + (video ? `?video=${encodeURIComponent(video)}` : "")),
+  resetAll: () => req("POST", "/api/results/reset"),
+  setSiteName: (value, video) => req("POST", "/api/results/site_name", { value, video }),
   setPipeCondition: (value) => req("POST", "/api/results/pipe_condition", { value }),
   editRow: (video, time_s, field, value) =>
     req("PATCH", "/api/results/row", { video, time_s, field, value }),
@@ -95,13 +97,19 @@ export const api = {
   deleteRow: (video, time_s) => req("DELETE", "/api/results/row", { video, time_s }),
   deleteGroup: (video, dist) => req("DELETE", "/api/results/group", { video, dist }),
 
-  exportExcel: (path) => req("POST", "/api/export/excel", { path }),
-  downloadExcel: () => downloadFile("/api/export/excel/download", "CCTV조사표.xlsx"),
-  downloadPipeassetPdf: () => downloadFile("/api/export/pdf/download", "CCTV야장.pdf"),
+  // video를 주면 그 관로만, 없으면 분석한 전체를 한 파일로 뽑는다
+  exportExcel: (path, video) => req("POST", "/api/export/excel", { path, video }),
+  downloadExcel: (video) =>
+    downloadFile("/api/export/excel/download" + (video ? `?video=${encodeURIComponent(video)}` : ""),
+      "CCTV조사표.xlsx"),
+  downloadPipeassetPdf: (video) =>
+    downloadFile("/api/export/pdf/download" + (video ? `?video=${encodeURIComponent(video)}` : ""),
+      "CCTV야장.pdf"),
 
   getReportMeta: (video) =>
     req("GET", "/api/config/report_meta" + (video ? `?video=${encodeURIComponent(video)}` : "")),
   setReportMeta: (values, video) => req("POST", "/api/config/report_meta", { values, video }),
+  getDefectCodes: () => req("GET", "/api/config/defect_codes"),
 
   getRemoteUrl: () => req("GET", "/api/config/remote_yolo_url"),
   setRemoteUrl: (url) => req("POST", "/api/config/remote_yolo_url", { url }),

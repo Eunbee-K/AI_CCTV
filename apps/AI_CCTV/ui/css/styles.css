@@ -383,6 +383,21 @@ tr.row-separator { background: #DDDDDD; font-weight: bold; }
 tr.row-separator td { text-align: left; padding-left: 8px; }
 tr.row-group-parent { background: #EEEFFF; cursor: pointer; user-select: none; }
 
+/* 펼친 그룹은 어디서 시작해 어디서 끝나는지 한눈에 보여야 한다.
+   안 그러면 딸린 행과 그 다음 결함이 섞여 보인다.
+   머리행은 진하게, 딸린 행은 옅은 같은 계열로 칠하고 왼쪽에 세로 띠를 둔다. */
+tr.row-group-parent.is-open { background: #DCDFFB; }
+tr.row-in-group { background: #F5F6FF; }
+tr.row-in-group.row-odd { background: #EFF1FD; }   /* 줄무늬도 같은 계열로 */
+
+tr.row-group-parent.is-open td:first-child,
+tr.row-in-group td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* 그룹의 마지막 행 아래에 경계선 — 다음 결함과 확실히 끊어준다 */
+tr.row-in-group.is-group-last td { border-bottom: 2px solid var(--accent); }
+
 /* 그룹 펼침/접힘 삼각형. 클릭/더블클릭/Enter 모두 같은 토글로 이어진다. */
 .group-caret {
   display: inline-block;
@@ -395,6 +410,10 @@ tr.row-group-parent { background: #EEEFFF; cursor: pointer; user-select: none; }
 tr.row-in-group td:first-child { padding-left: 26px; }   /* 그룹에 딸린 행만 들여쓴다 */
 tr.row-selected { background: var(--highlight) !important; color: #1976D2; }
 tr.row-hidden { display: none; }
+
+/* 결함항목 드롭다운. 직접 입력칸이 아래 붙을 수 있어 셀 안에서 세로로 쌓는다. */
+select.defect-select { width: 100%; min-width: 150px; }
+td:has(> select.defect-select) { white-space: normal; }
 
 td input.cell-edit {
   width: 100%;
@@ -424,6 +443,21 @@ td input.cell-edit {
 
 .clean-btn:hover { background: #F5F5F5; }
 .clean-btn.primary { font-weight: bold; }
+
+/* 되돌릴 수 없는 동작(초기화)은 눈에 띄게 — 실수로 누르지 않도록 */
+.clean-btn.danger { color: #b91c1c; border-color: #f0b4b4; }
+.clean-btn.danger:hover { background: #fef2f2; border-color: #dc2626; }
+
+/* 보고서 출력 범위(선택 영상 / 전체) */
+.scope-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.scope-item {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+  cursor: pointer;
+}
+.scope-item:hover { background: var(--row-odd); }
+.scope-item input { cursor: pointer; }
+.scope-item em { color: var(--text-sub); font-style: normal; font-size: 12px; margin-left: 6px; }
 .clean-btn:active { transform: translate(1px, 1px); }
 
 /* ───────── 미리보기 오버레이 / 줌 ───────── */

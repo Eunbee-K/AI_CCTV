@@ -4,7 +4,7 @@
 A4 세로 한 장의 구성:
 
     ┌─────────────────────────────────────┐
-    │        하수관거 현황 조사 보고서       │  제목
+    │        하수관거 현황 조사 보고서     │  제목
     ├─────────────────────────────────────┤
     │  사업명 / 보고서번호 / 관로 / 맨홀 …   │  메타데이터 표 (약 20항목)
     ├──────┬──────────────────────────────┤
@@ -102,8 +102,12 @@ class _Pen:
 
 # ───────── 메타데이터 표 ─────────
 
-def _draw_meta_table(pen: _Pen, page, pipe_id: str, dia: str, m: dict) -> float:
-    """야장 상단 표를 그리고 표 아래 y를 반환한다. m은 이 관로의 메타(공통+관로별)."""
+def _draw_meta_table(pen: _Pen, page, pipe_id: str, dia: str, m: dict,
+                     video_name: str = "") -> float:
+    """야장 상단 표를 그리고 표 아래 y를 반환한다. m은 이 관로의 메타(공통+관로별).
+
+    사업명(현장명)은 관로마다 다를 수 있어 video_name으로 골라 쓴다.
+    """
     x0, x1 = MARGIN_X, PAGE_W - MARGIN_X
     W = x1 - x0
     y = TABLE_TOP
@@ -113,7 +117,8 @@ def _draw_meta_table(pen: _Pen, page, pipe_id: str, dia: str, m: dict) -> float:
 
     # 1행: 사업명 | 값 | 보고서번호 | 값
     pen.cell(page, x0, y, W * .11, ROW_H, "사업명", **L(0))
-    pen.cell(page, x0 + W * .11, y, W * .55, ROW_H, state.site_name, align="left")
+    pen.cell(page, x0 + W * .11, y, W * .55, ROW_H,
+             state.site_name_of(video_name), align="left")
     pen.cell(page, x0 + W * .66, y, W * .16, ROW_H, "보고서번호", **L(0))
     pen.cell(page, x0 + W * .82, y, W * .18, ROW_H, m.get("보고서번호", ""), align="left")
     y += ROW_H
@@ -340,8 +345,11 @@ def _rows_for_pdf(video_name: str) -> List[dict]:
     return prepared
 
 
-def export_pipeasset_pdf(path: str) -> Optional[str]:
-    """야장 PDF를 path에 저장. 실패 시 에러 메시지, 성공 시 None."""
+def export_pipeasset_pdf(path: str, only_video: Optional[str] = None) -> Optional[str]:
+    """야장 PDF를 path에 저장. 실패 시 에러 메시지, 성공 시 None.
+
+    only_video를 주면 그 관로만 담는다.
+    """
     font_path = _find_font()
     if not font_path:
         return ("PDF에 쓸 한글 폰트를 찾지 못했습니다. "
@@ -352,7 +360,14 @@ def export_pipeasset_pdf(path: str) -> Optional[str]:
     doc = fitz.open()
     pen = _Pen(doc, font_path)
 
-    for video_name, v_data in state.video_data_map.items():
+    targets = state.video_data_map.items()
+    if only_video:
+        v = state.video_data_map.get(only_video)
+        if not v:
+            return f"그 관로를 찾을 수 없습니다: {only_video}"
+        targets = [(only_video, v)]
+
+    for video_name, v_data in targets:
         rows = _rows_for_pdf(video_name)
         if not rows:
             continue
@@ -368,7 +383,7 @@ def export_pipeasset_pdf(path: str) -> Optional[str]:
             pen.text(page, 0, TITLE_Y, "하수관거 현황 조사 보고서", size=17,
                      align="center", width=PAGE_W)
 
-            body_top = _draw_meta_table(pen, page, pipe_id, dia, m) + 22
+            body_top = _draw_meta_table(pen, page, pipe_id, dia, m, video_name) + 22
             body_bottom = PAGE_H - 60
 
             marks = _draw_photos(pen, page, chunk, body_top, body_bottom)
