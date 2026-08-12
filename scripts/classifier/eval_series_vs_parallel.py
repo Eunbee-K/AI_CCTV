@@ -13,6 +13,12 @@
 정답은 한글 조사표에서 뽑은 결함 거리다. 영상 자막 거리를 OCR로 읽어 시간↔거리
 곡선을 만들고, 결함 거리 ±TOL_M 안의 프레임을 정답 구간으로 본다.
 
+**이 정답은 성기다.** 카메라가 느려서 ±TOL_M 창 하나가 프레임 수십 장을 덮고,
+SM2에서는 정답 구간이 전체의 24.6%나 됐다(한 관로는 100%). 그래서 "상위 N%로
+잘라도 결함이 안 사라진다"는 결과가 필터 실력과 무관하게 나온다. **무작위
+대조군(percentile_report)과 프레임 단위 AUC(auc_report)를 반드시 같이 볼 것.**
+2026-08-12 재측정에서 필터 AUC는 0.52였고, 유실 0건은 무작위 0.4건과 구별되지 않았다.
+
 사용:
     python eval_series_vs_parallel.py --prefix SM2
 """
@@ -21,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import random
 import sys
 import tempfile
 from collections import defaultdict
@@ -28,35 +35,33 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import torch
-from PIL import Image
-from torchvision import transforms
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "fieldset"))
 sys.path.insert(0, str(ROOT / "apps" / "AI_CCTV"))
 
 from build_field_dataset import longest_nondecreasing, read_distance  # noqa: E402
-from train_binary import build_model  # noqa: E402
 
 DS = Path(r"E:/AI_CCTV_DATASET")
 SRC = Path(r"C:/Users/SAMSUNG/Desktop/상면 CCTV/20260128.가평군 상면 노후하수관로 정비공사")
 TOL_M = 1.0
 
 
-@torch.no_grad()
-def score(model, tf, frames):
-    out = []
-    for i in range(0, len(frames), 32):
-        b = torch.stack([tf(Image.open(f).convert("RGB")) for f in frames[i:i + 32]])
-        out += torch.softmax(model(b).float(), 1)[:, 1].tolist()
-    return out
+def score(frames):
+    """**앱이 실제로 쓰는 경로로 채점한다.**
+
+    처음에는 여기서 `transforms.Resize(224) + CenterCrop(224)`로 직접 전처리했는데,
+    학습 데이터는 프레임을 256x256으로 찌그러뜨려 저장한 것이라(build_binary_dataset.py)
+    좌우가 잘린 다른 입력이었다. 모델이 본 적 없는 그림으로 재고 있었던 셈이다.
+    backend.defect_filter는 학습과 같은 256->224 경로를 밟으므로 그대로 쓴다.
+    """
+    from backend import defect_filter
+    probs = defect_filter.defect_probs(frames)
+    return [probs[str(f)] for f in frames]
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", default=str(
-        Path(r"E:/AI_CCTV_RESULTS/filter/runs/OLD_v3-20260811T174845Z-1-001/OLD_v3/best.pt")))
     ap.add_argument("--prefix", default="SM2")
     ap.add_argument("--thresholds", default="0.032,0.043,0.071")
     ap.add_argument("--step", type=float, default=2.0)
@@ -70,15 +75,6 @@ def main():
     by_pipe = defaultdict(list)
     for r in rows:
         by_pipe[r["pipe_dir"]].append(float(r["distance_m"]))
-
-    ck = torch.load(args.ckpt, map_location="cpu", weights_only=False)
-    model = build_model(ck.get("arch", "effb0"))
-    model.load_state_dict(ck["model"])
-    model.eval()
-    img = ck.get("img", 224)
-    tf = transforms.Compose([
-        transforms.Resize(img), transforms.CenterCrop(img), transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
 
     tmp = Path(tempfile.mkdtemp()) / "_ocr.jpg"
     tmp.parent.mkdir(parents=True, exist_ok=True)
@@ -125,7 +121,7 @@ def main():
             t += args.step
         cap.release()
 
-        probs = score(model, tf, frames)
+        probs = score(frames)
         # 각 결함마다 정답 구간(±TOL_M) 프레임 집합
         groups = []
         for target in sorted(dists):
@@ -173,14 +169,21 @@ def main():
         print(f"{thr:>8.3f}{len(flag):>12,}{real:>11}{real/max(len(flag),1):>9.1%}{len(flag)/n:>10.1%}")
 
     percentile_report(per_pipe)
+    auc_report(per_pipe)
 
 
 def percentile_report(per_pipe):
-    """영상별 상위 N%로 자를 때 — 절대 임계값은 영상마다 분포가 달라 못 쓴다."""
+    """영상별 상위 N%로 자를 때 — 절대 임계값은 영상마다 분포가 달라 못 쓴다.
+
+    **무작위 대조군을 반드시 같이 본다.** 결함 하나가 여러 프레임에 걸쳐 있으면
+    아무 프레임이나 20% 골라도 그 결함이 살아남는다. 대조군 없이 "유실 0건"만
+    보면 필터가 일한 것으로 착각한다 — 8/11에 실제로 그렇게 잘못 읽었다.
+    """
     print("\n=== 영상별 상위 N% 로 자를 때 ===")
-    print(f"{'상위':>6}{'남는 프레임':>12}{'사라진 결함':>14}{'제거율':>9}")
+    print(f"{'상위':>6}{'남는 프레임':>12}{'사라진 결함':>14}{'제거율':>9}{'무작위 유실':>14}")
     total_def = sum(len(g) for _, _, _, g in per_pipe)
     total_fr = sum(len(f) for _, f, _, _ in per_pipe)
+    rng = random.Random(0)
     for pct in (0.10, 0.15, 0.20, 0.25, 0.30, 0.40):
         keep_n = lost = 0
         for _, frames, probs, groups in per_pipe:
@@ -190,7 +193,55 @@ def percentile_report(per_pipe):
             for _, g in groups:
                 if not (g & top):
                     lost += 1
-        print(f"{pct:>5.0%}{keep_n:>12,}{f'{lost}/{total_def}건':>14}{1-keep_n/total_fr:>9.1%}")
+
+        trials = []
+        for _ in range(500):
+            r_lost = 0
+            for _, frames, _, groups in per_pipe:
+                k = max(1, int(len(frames) * pct))
+                top = set(rng.sample(frames, k))
+                r_lost += sum(1 for _, g in groups if not (g & top))
+            trials.append(r_lost)
+        rand = sum(trials) / len(trials)
+
+        print(f"{pct:>5.0%}{keep_n:>12,}{f'{lost}/{total_def}건':>14}"
+              f"{1-keep_n/total_fr:>9.1%}{f'{rand:.1f}건':>14}")
+    print("  * 필터 유실이 무작위 유실과 비슷하면 필터가 일하지 않은 것이다.")
+
+
+def auc_report(per_pipe):
+    """프레임 순위 품질. 이 값이 0.5 근처면 위 표는 전부 기저율 효과다."""
+    print("\n=== 프레임 단위 AUC (정답 구간 vs 그 외) ===")
+    print(f"{'관로':<40}{'프레임':>7}{'정답':>7}{'AUC':>8}")
+    allp, alll = [], []
+    for pipe, frames, probs, groups in per_pipe:
+        gset = set().union(*[g for _, g in groups]) if groups else set()
+        lab = [int(f in gset) for f in frames]
+        allp += probs
+        alll += lab
+        a = _auc(probs, lab)
+        print(f"{pipe[:38]:<40}{len(frames):>7}{sum(lab):>7}"
+              + (f"{a:>8.3f}" if a == a else f"{'-':>8}"))
+    print(f"{'전체':<40}{len(allp):>7}{sum(alll):>7}{_auc(allp, alll):>8.3f}")
+
+
+def _auc(scores, labels):
+    pos = sum(labels)
+    neg = len(labels) - pos
+    if not pos or not neg:
+        return float("nan")
+    order = sorted(range(len(scores)), key=lambda i: scores[i])
+    ranks = {}
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and scores[order[j + 1]] == scores[order[i]]:
+            j += 1
+        for k in range(i, j + 1):
+            ranks[order[k]] = (i + j) / 2 + 1
+        i = j + 1
+    s = sum(ranks[i] for i in range(len(labels)) if labels[i])
+    return (s - pos * (pos + 1) / 2) / (pos * neg)
 
 
 if __name__ == "__main__":
