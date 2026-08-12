@@ -104,9 +104,9 @@ def _run_filter(frames, video_name: str) -> Dict[str, float]:
 
     t0 = time.time()
     probs = defect_filter.defect_probs(frames)
-    # 판정 기준이 모드마다 다르다 — series는 순위, parallel은 임계값.
+    # 판정 기준이 모드마다 다르다 — lead/series는 순위, parallel은 임계값.
     # 로그에 실제로 쓰는 기준을 적어야 나중에 숫자를 해석할 수 있다.
-    if FILTER_MODE == "series":
+    if FILTER_MODE in ("lead", "series"):
         detail = f"top {FILTER_TOP_RATIO:.0%} will pass"
     else:
         hit = sum(1 for p in probs.values() if p >= FILTER_THRESHOLD)
@@ -144,6 +144,125 @@ def _filter_only_frames(frames, probs: Dict[str, float], yolo_times: set) -> Lis
         else:
             runs.append([item])
     return [max(run, key=lambda x: x[2]) for run in runs]
+
+
+def _filter_runs(frames, probs: Dict[str, float]) -> List[List[Path]]:
+    """필터가 "결함"이라 본 구간들. 각 구간은 이어진 프레임 묶음이다.
+
+    **절대 임계값이 아니라 영상 안에서의 순위로 자른다.** 학습에 쓴 야장은 결함
+    비율이 45%인데 실제 영상은 1.5%라, 같은 임계값이 전혀 다르게 동작한다
+    (0.032로 자르면 실영상 프레임의 99.4%가 통과한다). 순위는 분포가 달라도
+    유지되므로 영상 조건에 자동으로 맞춰진다.
+
+    하나의 결함은 보통 여러 프레임에 걸쳐 보인다. 프레임마다 행을 만들면 같은
+    결함이 열 줄로 늘어나므로, 이어진 것끼리 한 구간으로 묶어 한 행만 만든다.
+    """
+    ranked = sorted(frames, key=lambda f: -probs.get(str(f), 0.0))
+    keep_n = max(1, round(len(frames) * FILTER_TOP_RATIO))
+    kept = sorted(ranked[:keep_n], key=lambda f: _frame_sec(f))
+
+    runs: List[List[Path]] = []
+    for f in kept:
+        if runs and _frame_sec(f) - _frame_sec(runs[-1][-1]) <= FRAME_INTERVAL:
+            runs[-1].append(f)
+        else:
+            runs.append([f])
+    return runs
+
+
+def _frame_sec(f) -> int:
+    """extract_frames가 {초:06d}.jpg로 저장한다. 아니면 정렬만 되게 -1."""
+    stem = Path(f).stem
+    return int(stem) if stem.isdigit() else -1
+
+
+def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
+                     merged_rows: List[dict], path) -> None:
+    """**필터가 잡은 구간이 곧 결함 리스트.** YOLO는 이름만 붙인다.
+
+    행을 만드는 주체가 뒤바뀐 것이 핵심이다. 지금까지는 YOLO가 박스를 친 프레임만
+    행이 됐고 필터는 옆에서 훈수만 뒀는데, 여기서는 필터가 고른 구간이 먼저 행이
+    되고 YOLO 검출은 그 행에 이름·박스로 얹힌다. YOLO가 아무것도 못 찾은 구간도
+    행으로 남아 검수자가 직접 보고 판단한다.
+
+    구간 대표 프레임은 **YOLO가 가장 자신 있게 검출한 프레임**을 쓴다. 박스가 보여야
+    검수자가 판단할 수 있기 때문이다. 검출이 없으면 필터 확률이 가장 높은 프레임.
+    """
+    runs = _filter_runs(frames, probs)
+    if FILTER_MAX_MISS_ROWS > 0:
+        runs = runs[:FILTER_MAX_MISS_ROWS]
+
+    # YOLO 검출을 시각으로 찾을 수 있게 해둔다
+    yolo_at = {int(item.get("time_s", 0)): item for item in merged_rows}
+    used: set = set()
+
+    for run in runs:
+        secs = [_frame_sec(f) for f in run]
+        hits = [(t, yolo_at[t]) for t in secs if t in yolo_at]
+
+        if hits:
+            # 신뢰도가 가장 높은 검출을 가진 프레임을 대표로
+            def best_conf(item):
+                return max((b.get("conf", 0) for b in item.get("boxes", [])), default=0)
+            t_sec, item = max(hits, key=lambda kv: best_conf(kv[1]))
+            used.update(t for t, _ in hits)
+        else:
+            t_sec = max(secs, key=lambda t: probs.get(
+                str(state.frames_root / path.stem / f"{t:06d}.jpg"), 0.0))
+            item = {}
+
+        frame_fp = state.frames_root / path.stem / f"{t_sec:06d}.jpg"
+        boxes = item.get("boxes", [])
+        annot_fp, norm_boxes = (None, [])
+        if boxes and frame_fp.exists():
+            annot_fp, norm_boxes = annotate_frame(frame_fp, boxes)
+
+        dist_ocr = ocr_distance_from_frame(frame_fp) if frame_fp.exists() else ""
+        span = ""
+        if len(run) > 1:
+            span = f"{seconds_to_mmss(secs[0])}~{seconds_to_mmss(secs[-1])}"
+
+        note = ""
+        if not boxes:
+            # YOLO가 이름을 못 붙인 구간. 결함항목은 검수자가 고른다.
+            note = "확인필요(이름 미부여)"
+        if span:
+            note = (note + " " if note else "") + f"구간 {span}"
+
+        v_data["rows"].append({
+            "time": t_sec,
+            "dist": dist_ocr or item.get("distance_text", ""),
+            "defects": item.get("defects", []),
+            "note": note,
+            "frame_path": frame_fp,
+            "frame_annot_path": annot_fp,
+            "boxes": boxes,
+            "boxes_norm": norm_boxes,
+            "fp": False,
+            "grade": "중",
+            "direction": item.get("direction", ""),
+            "filter_prob": probs.get(str(frame_fp)),
+            # 이름이 없는 행은 거리 그룹에 접히면 찾을 수 없다. 수동 행과 같은 취급.
+            "manual": not boxes,
+            "filter_only": not boxes,
+        })
+
+    named = sum(1 for r in v_data["rows"] if r["boxes"])
+    ws_manager.log(
+        f" - Filter(lead): {len(runs)} defect runs → {len(v_data['rows'])} rows "
+        f"({named} named by YOLO, {len(v_data['rows']) - named} need review)"
+    )
+
+    # 필터가 안 고른 곳에서 YOLO가 찾은 것. 표에는 넣지 않지만 조용히 사라지면
+    # 안 되므로 남긴다 — 이 숫자가 크면 FILTER_TOP_RATIO를 올려야 한다는 뜻이다.
+    orphan = sorted(t for t in yolo_at if t not in used)
+    if orphan:
+        ws_manager.log(
+            f"   ! YOLO detected at {len(orphan)} frames the filter did not pick: "
+            + ", ".join(seconds_to_mmss(t) for t in orphan[:12])
+            + (f" … 외 {len(orphan) - 12}곳" if len(orphan) > 12 else ""),
+            "WARN",
+        )
 
 
 def _apply_parallel_filter(v_data: dict, frames, probs: Dict[str, float], path) -> None:
@@ -277,6 +396,12 @@ def _run_batch_thread():
                 state.site_name = site
 
             _fill_report_meta_from_ocr(path.name, meta)
+
+            # lead: 필터가 고른 구간이 행이 되고, YOLO 검출은 거기에 이름으로 얹힌다.
+            # 그 외 모드: YOLO가 박스를 친 프레임이 행이 된다(기존 방식).
+            if probs and FILTER_MODE == "lead":
+                _build_lead_rows(v_data, frames, probs, merged_rows, path)
+                merged_rows = []
 
             for item in merged_rows:
                 t_sec = item.get("time_s", 0)

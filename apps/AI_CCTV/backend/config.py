@@ -56,8 +56,12 @@ YOLO_IGNORE_CLASSES = {
 # ───────── Stage-1 정상/결함 필터 ─────────
 # YOLO 앞단(또는 옆)에서 프레임에 결함이 있는지만 판정하는 분류기.
 #
-#   off       쓰지 않는다 (기본)
+#   off       쓰지 않는다
+#   lead      **필터가 잡은 구간이 곧 결함 리스트다(기본).** YOLO는 그 구간에
+#             이름만 붙인다. 결함을 찾는 일은 필터가, 이름 붙이는 일은 YOLO가
+#             한다는 역할 분담을 그대로 옮긴 것이다.
 #   series    점수 상위 FILTER_TOP_RATIO만 YOLO에 넘긴다. 나머지는 버린다.
+#             행은 YOLO가 만든다 — lead와 다르다.
 #   parallel  모든 프레임을 양쪽에 넣고 두 판단을 대조한다. 아무것도 버리지 않는
 #             대신 YOLO 오탐/누락 의심을 표에 표시한다.
 #
@@ -83,10 +87,10 @@ YOLO_IGNORE_CLASSES = {
 #
 # **이 모델은 노후관로(우수관) 전용이다.** 관로구분이 '신설'이면 자동으로 건너뛴다
 # (analysis.py). 신설용 필터는 데이터 부족으로 보류 — 현장 1,404장으로는 AUC 0.75.
-# 2026-08-12 오후: 눈으로 확인하기 위해 parallel로 켠다. parallel은 프레임을 하나도
-# 버리지 않고 표시만 남기므로, 필터 판단이 틀려도 결과가 사라지지 않는다.
-# series(버리는 모드)는 위 실측이 뒤집히기 전까지 기본값으로 쓰지 않는다.
-FILTER_MODE = os.getenv("FILTER_MODE", "parallel").strip().lower()
+# 2026-08-12 오후: lead. 위 실측대로 필터의 순위 품질은 아직 검증되지 않았지만,
+# lead는 프레임을 버리지 않고 "무엇을 볼지"를 정할 뿐이라 틀려도 되돌릴 수 있다.
+# 필터가 놓친 곳에서 YOLO가 뭔가 찾으면 로그에 남기므로 조용히 사라지지 않는다.
+FILTER_MODE = os.getenv("FILTER_MODE", "lead").strip().lower()
 FILTER_MODEL_PATH = Path(
     os.getenv("FILTER_MODEL_PATH", str(resource_path("assets/filter.onnx")))
 )
@@ -95,14 +99,24 @@ FILTER_MODEL_PATH = Path(
 # "결함 99% 재현"이던 0.032가 실영상에서는 프레임의 0.6%밖에 못 걸렀다).
 # 순위는 분포가 달라도 유지되므로 그나마 낫지만, 위에 적었듯 지금 모델로는
 # 순위 자체가 무작위다. 이 값은 필터를 되살렸을 때 쓸 자리만 잡아둔 것이다.
+#
+# **lead 모드에서는 이 값이 곧 검토 리스트의 길이를 정한다.** 상위 N%를 뽑아
+# 이어진 구간끼리 묶으면 그 구간 수가 표의 행 수가 된다. SM2 8개 관로 실측:
+#
+#   상위 10% -> 69행    상위 15% -> 91행
+#   상위 20% -> 105행   상위 30% -> 112행     (실제 조사표 결함은 13건)
+#
+# 20%면 관로당 7~26행이다. 길면 줄이고, 놓치는 게 있으면 늘린다.
 FILTER_TOP_RATIO = float(os.getenv("FILTER_TOP_RATIO", "0.20"))
 # parallel에서 "결함 의심" 표시에만 쓰는 절대 임계값. 프레임을 버리지 않는다.
 # 야장 val 2,580장에서 결함 재현율 99% 지점. 실영상에서는 의미가 없다(위 참고).
+# lead/series는 이 값을 쓰지 않는다 — 순위로 자른다.
 FILTER_THRESHOLD = float(os.getenv("FILTER_THRESHOLD", "0.032"))
 FILTER_BATCH_SIZE = int(os.getenv("FILTER_BATCH_SIZE", "16"))
-# parallel에서 "필터만 감지"로 새로 만드는 행의 상한(영상당). 필터가 오작동하면
-# 표가 수백 줄로 불어나 검토가 불가능해지므로 막아둔다.
-FILTER_MAX_MISS_ROWS = int(os.getenv("FILTER_MAX_MISS_ROWS", "30"))
+# 필터가 만드는 행의 상한(영상당). **0이면 무제한** — lead 모드는 필터가 잡은 것을
+# 전부 보여주는 게 목적이므로 기본이 무제한이다. 필터가 오작동해 표가 수백 줄로
+# 불어나면 여기에 숫자를 넣어 막는다.
+FILTER_MAX_MISS_ROWS = int(os.getenv("FILTER_MAX_MISS_ROWS", "0"))
 
 # 필요하면 여기에 클래스별 한글 표시명을 추가/수정. 목록에 없는 클래스는
 # best.pt에 저장된 클래스명이 그대로 표시된다.
