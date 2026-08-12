@@ -91,15 +91,11 @@ def _run_filter(frames, video_name: str) -> Dict[str, float]:
     if FILTER_MODE == "off" or not frames:
         return {}
 
-    # 지금 필터는 노후관로(우수관) 조사 야장으로만 학습했다. 신설관로는 정상의
-    # 생김새가 달라서(새 관은 깨끗해야 정상, 노후관은 흙이 좀 있어도 정상)
-    # 그대로 쓰면 오판한다. 신설관로용 모델이 생기기 전까지는 건너뛴다.
-    if state.pipe_condition != "노후":
-        ws_manager.log(
-            f" - Filter skipped: 노후관로 전용 모델 (현재 관로구분 '{state.pipe_condition or '미선택'}')"
-        )
-        return {}
-
+    # 이 필터는 노후관로(우수관) 조사 야장으로만 학습했다. 한동안 신설관로에서는
+    # 건너뛰게 해뒀는데, 전용 모델(NEW_v1)이 AUC 0.75로 미달이라 보류된 사이
+    # 신설관로에는 아무 보조 장치도 없는 상태가 됐다. parallel은 프레임을 버리지
+    # 않고 표시만 남기므로, 오판하더라도 결과가 사라지지 않는다. 그래서 관로구분과
+    # 무관하게 돌린다 — 신설에서 얼마나 맞는지는 눈으로 확인하며 판단한다.
     ok, why = defect_filter.availability()
     if not ok:
         # 필터는 보조 장치다. 없다고 분석을 멈추지 않고 알리기만 한다.

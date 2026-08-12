@@ -83,7 +83,10 @@ YOLO_IGNORE_CLASSES = {
 #
 # **이 모델은 노후관로(우수관) 전용이다.** 관로구분이 '신설'이면 자동으로 건너뛴다
 # (analysis.py). 신설용 필터는 데이터 부족으로 보류 — 현장 1,404장으로는 AUC 0.75.
-FILTER_MODE = os.getenv("FILTER_MODE", "off").strip().lower()
+# 2026-08-12 오후: 눈으로 확인하기 위해 parallel로 켠다. parallel은 프레임을 하나도
+# 버리지 않고 표시만 남기므로, 필터 판단이 틀려도 결과가 사라지지 않는다.
+# series(버리는 모드)는 위 실측이 뒤집히기 전까지 기본값으로 쓰지 않는다.
+FILTER_MODE = os.getenv("FILTER_MODE", "parallel").strip().lower()
 FILTER_MODEL_PATH = Path(
     os.getenv("FILTER_MODEL_PATH", str(resource_path("assets/filter.onnx")))
 )
@@ -104,6 +107,10 @@ FILTER_MAX_MISS_ROWS = int(os.getenv("FILTER_MAX_MISS_ROWS", "30"))
 # 필요하면 여기에 클래스별 한글 표시명을 추가/수정. 목록에 없는 클래스는
 # best.pt에 저장된 클래스명이 그대로 표시된다.
 YOLO_CLASS_MAP = {
+    # test5는 변형 클래스를 DEFORM으로 학습했다. 코드표(DEFECT_CODE_KO)와
+    # 조사표는 DF를 쓰므로 여기서 맞춰준다. 이걸 안 하면 표에 'DEFORM'이
+    # 날것으로 찍히고 한글명도 안 붙는다.
+    "DEFORM": "DF",
     "breakage": "파손",
     "separation": "이탈",
     "damage": "손상",
@@ -147,7 +154,7 @@ DEFECT_CODE_KO = {
     # 매뉴얼 25종에는 없지만 데이터셋에 존재하는 클래스
     "PJ": "이음부(정상)",
     "ETC": "기타",
-    # test6 모델은 영구장애물(PO)과 임시장애물(TO)을 하나로 묶어 학습했다.
+    # test5/test6은 영구장애물(PO)과 임시장애물(TO)을 하나로 묶어 학습했다.
     # 둘을 나누면 정확도가 떨어져서 합친 것이라, 검수자가 표에서 구분해 준다.
     "OBST": "장애물",
     "IN": "내부(정상)",
