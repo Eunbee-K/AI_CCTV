@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from fastapi import HTTPException
 
-from .. import session_store
+from .. import llm_infer, session_store
 from ..config import DEFECT_CODE_KO
 from ..state import (PIPE_META_FIELDS, PROJECT_META_FIELDS, REPORT_META_FIELDS,
                      REPORT_META_SPEC, state)
@@ -87,6 +87,45 @@ def set_report_meta(body: ReportMetaBody):
     session_store.save()
     return {"status": "ok", "video": target,
             "values": state.meta_for(target) if target else state.project_meta}
+
+
+class LlmBody(BaseModel):
+    enabled: bool
+    openai_key: Optional[str] = None
+    google_key: Optional[str] = None
+
+
+@router.get("/llm")
+def get_llm():
+    """LLM 판독 상태. 키는 값을 돌려주지 않고 들어있는지만 알린다."""
+    ok, detail = llm_infer.availability()
+    return {
+        "enabled": state.llm_enabled,
+        "ready": ok,
+        "detail": detail,
+        "has_openai": bool(state.llm_keys.get("openai")),
+        "has_google": bool(state.llm_keys.get("google")),
+    }
+
+
+@router.post("/llm")
+def set_llm(body: LlmBody):
+    """켜고 끄기 + 키 입력.
+
+    키는 메모리에만 둔다(state.llm_keys). 세션 파일에 저장하면 결과를 주고받을 때
+    키가 딸려 나가기 때문이다. 앱을 다시 켜면 환경변수에서만 읽는다.
+    빈 문자열을 보내면 그 키를 지운다 — None이면 그대로 둔다.
+    """
+    state.llm_enabled = bool(body.enabled)
+    if body.openai_key is not None:
+        state.llm_keys["openai"] = body.openai_key.strip()
+    if body.google_key is not None:
+        state.llm_keys["google"] = body.google_key.strip()
+
+    ok, detail = llm_infer.availability()
+    return {"status": "ok", "enabled": state.llm_enabled, "ready": ok, "detail": detail,
+            "has_openai": bool(state.llm_keys.get("openai")),
+            "has_google": bool(state.llm_keys.get("google"))}
 
 
 @router.get("/remote_yolo_url")

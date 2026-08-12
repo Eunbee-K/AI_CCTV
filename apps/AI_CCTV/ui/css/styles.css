@@ -157,9 +157,11 @@ body.splitting iframe, body.splitting img { pointer-events: none; }
   margin-bottom: 10px;
 }
 
-/* Colab 연결 패널은 2줄짜리 고정 컨트롤이라 늘어나거나 줄어들면 안 된다.
-   (list-card의 flex를 그대로 물려받아 찌그러지던 것을 막는다) */
-#colabCard {
+/* Colab 연결·LLM 판독 패널은 줄 수가 정해진 고정 컨트롤이라 늘어나거나 줄어들면
+   안 된다. (list-card의 flex를 그대로 물려받으면 min-height 120px로 찌그러져
+   아래쪽 줄이 다음 카드에 가려지고 버튼이 눌리지 않는다) */
+#colabCard,
+#llmCard {
   flex: 0 0 auto;
   min-height: 0;
 }

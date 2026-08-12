@@ -589,6 +589,58 @@ async function init() {
     }
   });
 
+  // LLM 판독 켜고 끄기. 외부 API를 부르므로 회사망에서는 못 쓴다 — 그래서 토글이다.
+  // 키는 서버 메모리에만 두므로 앱을 다시 켜면 다시 넣어야 한다.
+  const llmStatus = document.getElementById("llmStatus");
+  const btnLlm = document.getElementById("btnToggleLlm");
+  const llmOpenai = document.getElementById("llmOpenaiKey");
+  const llmGoogle = document.getElementById("llmGoogleKey");
+  let llmOn = false;
+
+  const setLlmStatus = (r) => {
+    llmOn = !!r.enabled;
+    btnLlm.textContent = llmOn ? "끄기" : "켜기";
+    if (!llmOn) {
+      llmStatus.textContent = "꺼짐";
+      llmStatus.className = "status";
+    } else {
+      llmStatus.textContent = r.ready ? `사용중 (${r.detail})` : `켬 — ${r.detail}`;
+      llmStatus.className = r.ready ? "status ok" : "status err";
+    }
+    // 이미 들어간 키는 값을 되받지 않으므로, 자리표시로만 알려준다
+    if (r.has_openai && !llmOpenai.value) llmOpenai.placeholder = "입력됨";
+    if (r.has_google && !llmGoogle.value) llmGoogle.placeholder = "입력됨";
+  };
+
+  try {
+    setLlmStatus(await api.getLlm());
+  } catch (_) {}
+
+  btnLlm.addEventListener("click", async () => {
+    btnLlm.disabled = true;
+    try {
+      const r = await api.setLlm({
+        enabled: !llmOn,
+        openai_key: llmOpenai.value.trim() || null,
+        google_key: llmGoogle.value.trim() || null,
+      });
+      // 키는 화면에 남겨두지 않는다. 자리표시를 "입력됨"으로 바꾸려면
+      // setLlmStatus보다 먼저 비워야 한다(값이 남아 있으면 건너뛴다).
+      llmOpenai.value = "";
+      llmGoogle.value = "";
+      setLlmStatus(r);
+      appendLog({
+        level: r.enabled && !r.ready ? "ERROR" : "INFO",
+        msg: r.enabled ? `LLM 판독: ${r.detail}` : "LLM 판독 꺼짐",
+      });
+      if (r.enabled && !r.ready) alert(`LLM 판독을 켤 수 없습니다.\n\n${r.detail}`);
+    } catch (e) {
+      appendLog({ level: "ERROR", msg: `LLM 설정 실패: ${e.message}` });
+    } finally {
+      btnLlm.disabled = false;
+    }
+  });
+
   setupSplitter();
 
   // 탭 전환 (결과표 / 통계)

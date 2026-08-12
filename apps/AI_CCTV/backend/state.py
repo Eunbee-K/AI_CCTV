@@ -109,6 +109,14 @@ class AppState:
         from .config import REMOTE_YOLO_URL
         self.remote_yolo_url: str = REMOTE_YOLO_URL
 
+        # LLM 판독(Gemini+GPT). 외부 API를 부르므로 회사망에서는 못 쓴다.
+        # 그래서 화면에서 껐다 켰다 한다. 기본은 꺼짐.
+        from .config import LLM_ENABLED_DEFAULT
+        self.llm_enabled: bool = LLM_ENABLED_DEFAULT
+        # 화면에서 넣은 API 키. **메모리에만 둔다** — 세션 파일에 저장하면 결과를
+        # 주고받을 때 키가 딸려 나간다.
+        self.llm_keys: dict = {"openai": "", "google": ""}
+
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.lock = threading.Lock()
 

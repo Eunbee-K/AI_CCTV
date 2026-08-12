@@ -17,3 +17,11 @@ paddleocr>=3.0
 openpyxl>=3.1
 pillow>=11.0
 torch>=2.8
+
+# Stage-1 결함 필터(backend/defect_filter.py). torch 없이 돌리기 위해 ONNX를 쓴다.
+onnxruntime>=1.18
+
+# LLM 판독(backend/llm_infer.py) — 선택. 외부 API를 부르므로 회사망에서는 못 쓴다.
+# 앱 화면에서 껐다 켤 수 있고, 꺼져 있으면 이 패키지들이 없어도 정상 동작한다.
+google-generativeai>=0.8
+openai>=1.40

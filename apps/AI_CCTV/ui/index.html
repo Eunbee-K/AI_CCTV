@@ -53,6 +53,32 @@
         </div>
       </div>
 
+      <div class="list-card" id="llmCard">
+        <div class="list-header">
+          <span class="list-title">LLM 판독 (Gemini + GPT)</span>
+          <span id="llmStatus" class="status">꺼짐</span>
+        </div>
+        <div class="colab-steps">
+          <div class="colab-row">
+            <span class="colab-step">외부 API를 부릅니다. 회사망에서는 켜지지 않습니다.</span>
+          </div>
+          <div class="colab-row">
+            <span class="colab-step">OpenAI 키</span>
+            <input type="password" id="llmOpenaiKey" class="colab-url"
+                   placeholder="sk-... (입력한 키는 저장하지 않습니다)" autocomplete="off" />
+          </div>
+          <div class="colab-row">
+            <span class="colab-step">Google 키</span>
+            <input type="password" id="llmGoogleKey" class="colab-url"
+                   placeholder="AIza... (입력한 키는 저장하지 않습니다)" autocomplete="off" />
+          </div>
+          <div class="colab-row">
+            <span class="colab-step">사용 여부</span>
+            <button id="btnToggleLlm" class="clean-btn">켜기</button>
+          </div>
+        </div>
+      </div>
+
       <div class="list-card" id="queueCard">
         <div class="list-header">
           <span class="list-title">분석 대기 영상</span>

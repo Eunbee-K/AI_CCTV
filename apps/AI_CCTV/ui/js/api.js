@@ -111,6 +111,8 @@ export const api = {
   setReportMeta: (values, video) => req("POST", "/api/config/report_meta", { values, video }),
   getDefectCodes: () => req("GET", "/api/config/defect_codes"),
 
+  getLlm: () => req("GET", "/api/config/llm"),
+  setLlm: (body) => req("POST", "/api/config/llm", body),
   getRemoteUrl: () => req("GET", "/api/config/remote_yolo_url"),
   setRemoteUrl: (url) => req("POST", "/api/config/remote_yolo_url", { url }),
 

@@ -118,6 +118,23 @@ FILTER_BATCH_SIZE = int(os.getenv("FILTER_BATCH_SIZE", "16"))
 # 불어나면 여기에 숫자를 넣어 막는다.
 FILTER_MAX_MISS_ROWS = int(os.getenv("FILTER_MAX_MISS_ROWS", "0"))
 
+# ───────── LLM 판독 (세 번째 의견) ─────────
+# 필터가 고른 구간에 YOLO와 나란히 이름을 붙이는 두 번째 판독자.
+# ver_2.2 앱에서 쓰던 Gemini+GPT 구조를 옮겨왔다(backend/llm_infer.py).
+#
+# **회사망에서는 못 쓴다** — 외부 API를 호출하므로 망분리 환경에서는 켜지지 않는다.
+# 그래서 기본이 꺼짐이고, 앱 화면에서 껐다 켰다 한다(state.llm_enabled).
+# LLM_ENABLED=1 로 시작하면 처음부터 켜진 채로 뜬다.
+LLM_ENABLED_DEFAULT = os.getenv("LLM_ENABLED", "").strip().lower() in ("1", "true", "on")
+LLM_GEMINI_MODEL = os.getenv("LLM_GEMINI_MODEL", "gemini-3-flash-preview")
+LLM_GPT_MODEL = os.getenv("LLM_GPT_MODEL", "gpt-5")
+# 한 번에 보내는 프레임 수. 늘리면 호출이 줄지만 응답이 길어져 잘려 나가기 쉽다.
+LLM_CHUNK_SIZE = int(os.getenv("LLM_CHUNK_SIZE", "7"))
+# 동시에 띄우는 API 호출 수. 호출은 대부분 대기 시간이라 늘리면 그만큼 빨라지는데,
+# 너무 늘리면 429(rate limit)가 난다. 88프레임 기준 2일 때 456초였다.
+LLM_MAX_WORKERS = int(os.getenv("LLM_MAX_WORKERS", "6"))
+LLM_TIMEOUT_S = int(os.getenv("LLM_TIMEOUT_S", "600"))
+
 # 필요하면 여기에 클래스별 한글 표시명을 추가/수정. 목록에 없는 클래스는
 # best.pt에 저장된 클래스명이 그대로 표시된다.
 YOLO_CLASS_MAP = {
