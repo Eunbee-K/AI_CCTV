@@ -130,6 +130,28 @@ LLM_GEMINI_MODEL = os.getenv("LLM_GEMINI_MODEL", "gemini-3-flash-preview")
 LLM_GPT_MODEL = os.getenv("LLM_GPT_MODEL", "gpt-5")
 # 한 번에 보내는 프레임 수. 늘리면 호출이 줄지만 응답이 길어져 잘려 나가기 쉽다.
 LLM_CHUNK_SIZE = int(os.getenv("LLM_CHUNK_SIZE", "7"))
+# 프롬프트에 같이 보낼 예시 사진 폴더(ver.2.0 학습데이터). `labels.jsonl`이 있으면
+# 그걸 정답으로 읽고, 없으면 파일명 `{날짜}_{라벨}(번호).jpg`에서 라벨을 뽑는다.
+# 폴더가 없으면 글로만 설명하고 넘어간다 — 예시가 없다고 판독을 멈추지는 않는다.
+#
+# 원본은 이동식 드라이브에 있어 PC마다 문자가 바뀐다(E:, F: ...). 그래서 이 앱이
+# 놓인 드라이브를 먼저 보고, 없으면 ver_2.2가 쓰던 바탕화면 경로를 본다.
+def _find_examples_dir() -> Path:
+    env = os.getenv("LLM_EXAMPLES_DIR", "").strip()
+    if env:
+        return Path(env)
+    rel = Path("CCTV/ver.2.0_학습데이터")
+    candidates = [
+        Path(__file__).resolve().anchor / rel,          # 이 앱이 놓인 드라이브
+        Path.home() / "Desktop" / rel,                  # ver_2.2가 쓰던 자리
+    ]
+    return next((c for c in candidates if c.exists()), candidates[0])
+
+
+LLM_EXAMPLES_DIR = _find_examples_dir()
+# 라벨당 몇 장을 보낼지. ver_2.2는 1장이었는데, 늘리면 판독이 안정되는 대신
+# 호출이 무거워진다(라벨 9종 × N장이 매 청크마다 따라붙는다).
+LLM_EXAMPLES_PER_LABEL = int(os.getenv("LLM_EXAMPLES_PER_LABEL", "2"))
 # 동시에 띄우는 API 호출 수. 호출은 대부분 대기 시간이라 늘리면 그만큼 빨라지는데,
 # 너무 늘리면 429(rate limit)가 난다. 88프레임 기준 2일 때 456초였다.
 LLM_MAX_WORKERS = int(os.getenv("LLM_MAX_WORKERS", "6"))

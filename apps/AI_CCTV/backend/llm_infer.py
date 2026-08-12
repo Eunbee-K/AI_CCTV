@@ -29,8 +29,9 @@ from typing import Dict, List, Optional, Tuple
 
 from PIL import Image
 
-from .config import (LLM_CHUNK_SIZE, LLM_GEMINI_MODEL, LLM_GPT_MODEL,
-                     LLM_MAX_WORKERS, LLM_TIMEOUT_S, EXTRACT_MAX_SIDE)
+from .config import (LLM_CHUNK_SIZE, LLM_EXAMPLES_DIR, LLM_EXAMPLES_PER_LABEL,
+                     LLM_GEMINI_MODEL, LLM_GPT_MODEL, LLM_MAX_WORKERS,
+                     LLM_TIMEOUT_S, EXTRACT_MAX_SIDE)
 
 # ver_2.2가 쓰던 8종. 우리 코드표(31종)보다 거칠지만 LLM이 실제로 구분해내는 단위다.
 # 옮기면서 코드표에 맞춰 매핑까지 해둔다 — 표에는 코드로 들어가야 하기 때문이다.
@@ -64,6 +65,9 @@ SYSTEM_PROMPT_EN = (
     "7. **Intruding Pipe (가지관 돌출)**: Connecting pipe sticking out.\n"
     "8. **Other (기타)**: Ambiguous defects.\n\n"
     "--- Instructions ---\n"
+    "0. Reference images may be provided, each tagged `Ex: <label>`. Images tagged\n"
+    "   `Ex: 정상` are NORMAL pipe — do NOT report defects for frames that look\n"
+    "   like these. Match the reference images over your general intuition.\n"
     "1. Analyze frames sequentially.\n"
     "2. Output **ONLY ONE JSON LIST**.\n"
     "3. Sensitivity: MEDIUM. Report clear defects.\n"
@@ -105,7 +109,13 @@ def availability() -> Tuple[bool, str]:
         have.append("GPT")
     if not have:
         return False, "google-generativeai / openai 패키지가 설치돼 있지 않습니다"
-    return True, " + ".join(have)
+
+    ex = load_examples()
+    detail = " + ".join(have)
+    # 예시가 실제로 붙었는지 화면에서 확인할 수 있어야 한다. 폴더 경로만 맞춰두고
+    # 안 들어간 채로 도는 것이 제일 알아채기 어렵다.
+    detail += f" · 예시 {len(ex)}장" if ex else " · 예시 없음"
+    return True, detail
 
 
 def _genai():
@@ -138,6 +148,67 @@ def _repair_json(text: str):
         return json.loads(s)
     except Exception:
         return []
+
+
+_EXAMPLES: Optional[List[Tuple[str, bytes]]] = None
+
+
+def load_examples() -> List[Tuple[str, bytes]]:
+    """프롬프트에 같이 보낼 예시 사진 [(라벨, jpeg바이트), ...].
+
+    ver_2.2는 GPT에만, 라벨당 1장만, 파일명 부분일치로 골라 보냈다. 여기서는
+    `labels.jsonl`(있으면)을 정답으로 읽고 **두 모델 모두에게** 보낸다.
+
+    **정상 사진도 함께 보낸다.** LLM은 결함을 과하게 잡는 편이라(실측에서 88프레임
+    중 69장을 결함이라 봤다) "이런 건 정상"을 보여주는 쪽이 실제로 필요하다.
+
+    한 번 읽어 캐시한다 — 매 청크마다 다시 인코딩하면 그만큼 느려진다.
+    """
+    global _EXAMPLES
+    if _EXAMPLES is not None:
+        return _EXAMPLES
+
+    _EXAMPLES = []
+    d = LLM_EXAMPLES_DIR
+    if not d.exists():
+        return _EXAMPLES
+
+    by_label: Dict[str, List[Path]] = {}
+    manifest = d / "labels.jsonl"
+    if manifest.exists():
+        for line in manifest.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            fp = d / str(obj.get("image", ""))
+            if not fp.exists():
+                continue
+            for lab in obj.get("labels", []):
+                by_label.setdefault(str(lab).strip(), []).append(fp)
+    else:
+        # 파일명 규칙: {날짜}_{라벨}[_라벨2](번호).jpg
+        for fp in sorted(d.iterdir()):
+            if fp.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                continue
+            m = re.match(r"\d+_(.+?)\(\d+\)", fp.stem)
+            if not m:
+                continue
+            for lab in m.group(1).split("_"):
+                by_label.setdefault(lab.strip(), []).append(fp)
+
+    for lab, files in by_label.items():
+        # 우리가 이름을 아는 결함 + 정상만 보낸다. 모르는 라벨은 혼란만 준다.
+        if lab != "정상" and lab not in LLM_LABEL_TO_CODE:
+            continue
+        for fp in files[:LLM_EXAMPLES_PER_LABEL]:
+            data = _img_b64(fp)
+            if data:
+                _EXAMPLES.append((lab, data))
+    return _EXAMPLES
 
 
 def _img_b64(fp: Path) -> Optional[bytes]:
@@ -197,7 +268,14 @@ def _call_gemini(frames: List[Path]) -> Tuple[List[dict], Optional[str]]:
                                "response_mime_type": "application/json",
                                "max_output_tokens": 8192},
         )
-        parts = ["--- Analyze Frames based on Text Definitions ---"]
+        parts = []
+        examples = load_examples()
+        if examples:
+            parts.append("--- Visual Examples (Reference) ---")
+            for lab, data in examples:
+                parts.append({"mime_type": "image/jpeg", "data": data})
+                parts.append(f"Ex: {lab}")
+        parts.append("--- Analyze Frames based on Text Definitions ---")
         for fp in frames:
             d = _img_b64(fp)
             if not d:
@@ -228,7 +306,17 @@ def _call_gpt(frames: List[Path]) -> Tuple[List[dict], Optional[str]]:
         return [], None
     try:
         client = OpenAI(api_key=key)
-        content = [{"type": "text", "text": "--- Analyze Frames ---"}]
+        content = []
+        examples = load_examples()
+        if examples:
+            content.append({"type": "text", "text": "--- Visual Examples (Reference) ---"})
+            for lab, data in examples:
+                b64 = base64.b64encode(data).decode()
+                content.append({"type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{b64}",
+                                              "detail": "low"}})
+                content.append({"type": "text", "text": f"Ex: {lab}"})
+        content.append({"type": "text", "text": "--- Analyze Frames ---"})
         for fp in frames:
             d = _img_b64(fp)
             if not d:
