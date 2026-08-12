@@ -9,6 +9,7 @@ import cv2
 from . import defect_filter, session_store, ws_manager
 from .annotate import annotate_frame
 from .config import (FILTER_MAX_MISS_ROWS, FILTER_MODE, FILTER_THRESHOLD,
+                     FILTER_TOP_RATIO,
                      FRAME_INTERVAL)
 from .frames import extract_frames, seconds_to_mmss
 from .ocr import ocr_distance_from_frame, ocr_overlay_metadata, normalize_diameter_text, try_ocr_find_range
@@ -107,10 +108,16 @@ def _run_filter(frames, video_name: str) -> Dict[str, float]:
 
     t0 = time.time()
     probs = defect_filter.defect_probs(frames)
-    hit = sum(1 for p in probs.values() if p >= FILTER_THRESHOLD)
+    # 판정 기준이 모드마다 다르다 — series는 순위, parallel은 임계값.
+    # 로그에 실제로 쓰는 기준을 적어야 나중에 숫자를 해석할 수 있다.
+    if FILTER_MODE == "series":
+        detail = f"top {FILTER_TOP_RATIO:.0%} will pass"
+    else:
+        hit = sum(1 for p in probs.values() if p >= FILTER_THRESHOLD)
+        detail = f"{hit} over threshold {FILTER_THRESHOLD}"
     ws_manager.log(
-        f" - Filter({FILTER_MODE}): {hit}/{len(probs)} frames look defective "
-        f"(threshold {FILTER_THRESHOLD}, {time.time() - t0:.1f}s)"
+        f" - Filter({FILTER_MODE}): scored {len(probs)}/{len(frames)} frames "
+        f"({detail}, {time.time() - t0:.1f}s)"
     )
     return probs
 
@@ -223,20 +230,26 @@ def _run_batch_thread():
             probs = _run_filter(frames, path.name)
             yolo_frames = frames
             if probs and FILTER_MODE == "series":
-                # 판정을 못 받은 프레임(읽기 실패 등)은 통과시킨다. 필터가 조용히
-                # 버리는 것보다 YOLO가 한 번 더 보는 편이 안전하다.
-                yolo_frames = [f for f in frames if probs.get(str(f), 1.0) >= FILTER_THRESHOLD]
-                dropped = [f for f in frames if f not in set(yolo_frames)]
+                # **절대 임계값이 아니라 영상 안에서의 순위로 자른다.** 학습·검증에 쓴
+                # 야장 데이터는 결함 비율이 45%인데 실제 영상은 1.5%라, 같은 임계값이
+                # 전혀 다르게 동작한다(0.032로 자르니 프레임의 0.6%밖에 안 걸러졌다).
+                # 순위는 분포가 달라도 유지되므로 영상 조건에 자동으로 맞춰진다.
+                #
+                # 판정을 못 받은 프레임(읽기 실패 등)은 확률을 1.0으로 둬 통과시킨다.
+                # 필터가 조용히 버리는 것보다 YOLO가 한 번 더 보는 편이 안전하다.
+                ranked = sorted(frames, key=lambda f: -probs.get(str(f), 1.0))
+                keep_n = max(1, round(len(frames) * FILTER_TOP_RATIO))
+                yolo_frames = sorted(ranked[:keep_n], key=lambda f: str(f))
+                dropped = ranked[keep_n:]
                 ws_manager.log(
                     f" - Filter(series): {len(yolo_frames)}/{len(frames)} frames pass "
-                    f"→ {len(dropped)} skipped (threshold {FILTER_THRESHOLD})"
+                    f"(top {FILTER_TOP_RATIO:.0%}) → {len(dropped)} skipped"
                 )
-                # 직렬은 되돌릴 수 없다. 어느 구간이 사라졌는지 흔적을 남긴다.
+                # 직렬은 되돌릴 수 없다. 버린 구간을 로그에 남겨 눈으로 되짚을 수 있게 한다.
                 if dropped:
                     secs = sorted(int(Path(f).stem) for f in dropped if Path(f).stem.isdigit())
-                    v_data["filter_skipped"] = secs
                     ws_manager.log(
-                        f"   skipped at: {', '.join(seconds_to_mmss(s) for s in secs[:12])}"
+                        f"   skipped at: {', '.join(seconds_to_mmss(x) for x in secs[:12])}"
                         + (f" … 외 {len(secs) - 12}곳" if len(secs) > 12 else "")
                     )
 
