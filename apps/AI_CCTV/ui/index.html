@@ -53,30 +53,11 @@
         </div>
       </div>
 
-      <div class="list-card" id="llmCard">
-        <div class="list-header">
-          <span class="list-title">LLM 판독 (Gemini + GPT)</span>
-          <span id="llmStatus" class="status">꺼짐</span>
-        </div>
-        <div class="colab-steps">
-          <div class="colab-row">
-            <span class="colab-step">외부 API를 부릅니다. 회사망에서는 켜지지 않습니다.</span>
-          </div>
-          <div class="colab-row">
-            <span class="colab-step">OpenAI 키</span>
-            <input type="password" id="llmOpenaiKey" class="colab-url"
-                   placeholder="sk-... (입력한 키는 저장하지 않습니다)" autocomplete="off" />
-          </div>
-          <div class="colab-row">
-            <span class="colab-step">Google 키</span>
-            <input type="password" id="llmGoogleKey" class="colab-url"
-                   placeholder="AIza... (입력한 키는 저장하지 않습니다)" autocomplete="off" />
-          </div>
-          <div class="colab-row">
-            <span class="colab-step">사용 여부</span>
-            <button id="btnToggleLlm" class="clean-btn">켜기</button>
-          </div>
-        </div>
+      <!-- LLM은 쓰는 사람이 많지 않으므로 한 줄만 두고 설정은 창에서 받는다 -->
+      <div class="llm-strip">
+        <span class="list-title">LLM 판독</span>
+        <span id="llmStatus" class="status">꺼짐</span>
+        <button id="btnLlmOpen" class="clean-btn">사용</button>
       </div>
 
       <div class="list-card" id="queueCard">
@@ -207,6 +188,36 @@
     </div>
     <div class="dlg-foot">
       <button id="btnExportCancel" class="clean-btn">취소</button>
+    </div>
+  </dialog>
+
+  <!-- LLM 판독 설정 -->
+  <dialog id="dlgLlm" class="dlg">
+    <h3 class="dlg-title">LLM 판독 (Gemini + GPT)</h3>
+    <p class="dlg-sub">
+      필터가 찾은 구간에 YOLO와 나란히 결함 이름을 붙입니다.
+      <b>외부 API를 호출하므로 회사망에서는 켜지지 않습니다.</b>
+    </p>
+
+    <div class="llm-fields">
+      <label class="llm-field">
+        <span>OpenAI 키</span>
+        <input type="password" id="llmOpenaiKey" placeholder="sk-..." autocomplete="off" />
+      </label>
+      <label class="llm-field">
+        <span>Google 키</span>
+        <input type="password" id="llmGoogleKey" placeholder="AIza..." autocomplete="off" />
+      </label>
+    </div>
+    <p class="dlg-sub llm-note">
+      입력한 키는 저장하지 않습니다. 앱을 다시 켜면 다시 넣어야 합니다.
+      환경변수(<code>OPENAI_API_KEY</code>, <code>GOOGLE_API_KEY</code>)로 넣어두면 생략됩니다.
+    </p>
+
+    <div class="dlg-foot">
+      <span id="llmDlgStatus" class="status llm-dlg-status"></span>
+      <button id="btnLlmCancel" class="clean-btn">닫기</button>
+      <button id="btnToggleLlm" class="clean-btn">켜기</button>
     </div>
   </dialog>
 

@@ -289,7 +289,17 @@ def defect_korean(label: str) -> str:
     return raw if raw in _DEFECT_KO_TO_CODE else ""
 
 # ───────── 프레임 추출 설정 ─────────
-FRAME_INTERVAL = 2
+# **1초.** 2초로 자르면 카메라가 빠른 구간에서 한 프레임에 0.6m씩 건너뛴다.
+# JB1-2-0413의 2:31 결함(13.5m)이 그 틈으로 빠져 필터가 아예 볼 기회조차 없었다.
+# 1초로 줄이니 최대 점프가 0.30m가 되고 그 결함이 통과한다.
+#
+#   2초  128프레임 · 최대 점프 0.60m · 2:31 탈락
+#   1초  256프레임 · 최대 점프 0.30m · 2:31 통과
+#
+# 대신 프레임이 2배라 YOLO·OCR·LLM 시간도 그만큼 늘어난다. 참고로 카메라가 멈춰
+# 있는 동안 찍힌 중복 프레임이 47%인데(거리 변화 5cm 이하), 이건 시간이 아니라
+# 거리로 자르면 없앨 수 있다 — 다음 개선 후보.
+FRAME_INTERVAL = int(os.getenv("FRAME_INTERVAL", "1"))
 EXTRACT_MAX_SIDE = 768
 EXTRACT_JPEG_QUALITY = 80
 USE_OCR = True

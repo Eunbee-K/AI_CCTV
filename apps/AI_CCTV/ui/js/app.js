@@ -589,10 +589,15 @@ async function init() {
     }
   });
 
-  // LLM 판독 켜고 끄기. 외부 API를 부르므로 회사망에서는 못 쓴다 — 그래서 토글이다.
+  // LLM 판독. 쓰는 사람이 적어서 화면에는 한 줄만 두고 설정은 창에서 받는다.
+  // 외부 API를 부르므로 회사망에서는 못 쓴다 — 그래서 토글이다.
   // 키는 서버 메모리에만 두므로 앱을 다시 켜면 다시 넣어야 한다.
   const llmStatus = document.getElementById("llmStatus");
+  const llmDlg = document.getElementById("dlgLlm");
+  const llmDlgStatus = document.getElementById("llmDlgStatus");
+  const btnLlmOpen = document.getElementById("btnLlmOpen");
   const btnLlm = document.getElementById("btnToggleLlm");
+  const btnLlmCancel = document.getElementById("btnLlmCancel");
   const llmOpenai = document.getElementById("llmOpenaiKey");
   const llmGoogle = document.getElementById("llmGoogleKey");
   let llmOn = false;
@@ -600,13 +605,11 @@ async function init() {
   const setLlmStatus = (r) => {
     llmOn = !!r.enabled;
     btnLlm.textContent = llmOn ? "끄기" : "켜기";
-    if (!llmOn) {
-      llmStatus.textContent = "꺼짐";
-      llmStatus.className = "status";
-    } else {
-      llmStatus.textContent = r.ready ? `사용중 (${r.detail})` : `켬 — ${r.detail}`;
-      llmStatus.className = r.ready ? "status ok" : "status err";
-    }
+    // 한 줄짜리 표시는 좁으므로 켜짐/꺼짐만. 자세한 사정은 창 안에서 보여준다.
+    llmStatus.textContent = !llmOn ? "꺼짐" : r.ready ? "사용중" : "설정 필요";
+    llmStatus.className = !llmOn ? "status" : r.ready ? "status ok" : "status err";
+    llmDlgStatus.textContent = llmOn ? r.detail : "";
+    llmDlgStatus.className = `status llm-dlg-status${llmOn && r.ready ? " ok" : llmOn ? " err" : ""}`;
     // 이미 들어간 키는 값을 되받지 않으므로, 자리표시로만 알려준다
     if (r.has_openai && !llmOpenai.value) llmOpenai.placeholder = "입력됨";
     if (r.has_google && !llmGoogle.value) llmGoogle.placeholder = "입력됨";
@@ -616,8 +619,21 @@ async function init() {
     setLlmStatus(await api.getLlm());
   } catch (_) {}
 
+  btnLlmOpen.addEventListener("click", async () => {
+    // 다른 창에서 껐다 켰을 수도 있으니 열 때 서버 상태를 다시 읽는다
+    try {
+      setLlmStatus(await api.getLlm());
+    } catch (_) {}
+    llmDlg.showModal();
+  });
+  btnLlmCancel.addEventListener("click", () => llmDlg.close());
+
   btnLlm.addEventListener("click", async () => {
     btnLlm.disabled = true;
+    // 예시 사진을 처음 읽어 인코딩하는 데 1~2초 걸린다. 아무 표시가 없으면
+    // 버튼이 먹통인 줄 안다.
+    llmDlgStatus.textContent = "확인 중…";
+    llmDlgStatus.className = "status llm-dlg-status";
     try {
       const r = await api.setLlm({
         enabled: !llmOn,
@@ -633,7 +649,8 @@ async function init() {
         level: r.enabled && !r.ready ? "ERROR" : "INFO",
         msg: r.enabled ? `LLM 판독: ${r.detail}` : "LLM 판독 꺼짐",
       });
-      if (r.enabled && !r.ready) alert(`LLM 판독을 켤 수 없습니다.\n\n${r.detail}`);
+      // 켜졌으면 창을 닫는다. 실패했으면 이유를 봐야 하므로 열어둔다.
+      if (!r.enabled || r.ready) llmDlg.close();
     } catch (e) {
       appendLog({ level: "ERROR", msg: `LLM 설정 실패: ${e.message}` });
     } finally {

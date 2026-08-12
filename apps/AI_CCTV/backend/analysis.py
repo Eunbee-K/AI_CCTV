@@ -223,14 +223,24 @@ def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
     used: set = set()
     llm_used: set = set()
 
+    def best_conf(item):
+        # 박스의 신뢰도 키는 "confidence"다("conf"가 아니다 — yolo_infer.py 참고).
+        return max((b.get("confidence") or 0 for b in item.get("boxes", [])), default=0)
+
     for run in runs:
         secs = [_frame_sec(f) for f in run]
         hits = [(t, yolo_at[t]) for t in secs if t in yolo_at]
 
+        if not hits and secs:
+            # **구간 바로 옆의 검출도 끌어온다.** 필터와 YOLO가 같은 결함을 한 프레임
+            # 어긋나게 보는 일이 흔하다. JB1-2-0413의 2:31 결함이 그랬다 — 필터는
+            # 02:33 한 장만 골랐는데 YOLO는 02:32와 02:34를 잡아, 딱 사이로 빠져
+            # "이름 미부여"가 됐다. 한 프레임 폭만 넓혀 같은 결함으로 본다.
+            lo, hi = secs[0] - FRAME_INTERVAL, secs[-1] + FRAME_INTERVAL
+            hits = [(t, yolo_at[t]) for t in yolo_at if lo <= t <= hi and t not in used]
+
         if hits:
-            # 신뢰도가 가장 높은 검출을 가진 프레임을 대표로
-            def best_conf(item):
-                return max((b.get("conf", 0) for b in item.get("boxes", [])), default=0)
+            # 신뢰도가 가장 높은 검출을 가진 프레임을 대표로 — 박스가 보여야 한다
             t_sec, item = max(hits, key=lambda kv: best_conf(kv[1]))
             used.update(t for t, _ in hits)
         else:

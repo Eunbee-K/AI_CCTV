@@ -157,14 +157,53 @@ body.splitting iframe, body.splitting img { pointer-events: none; }
   margin-bottom: 10px;
 }
 
-/* Colab 연결·LLM 판독 패널은 줄 수가 정해진 고정 컨트롤이라 늘어나거나 줄어들면
-   안 된다. (list-card의 flex를 그대로 물려받으면 min-height 120px로 찌그러져
+/* Colab 연결 패널은 2줄짜리 고정 컨트롤이라 늘어나거나 줄어들면 안 된다.
+   (list-card의 flex를 그대로 물려받으면 min-height 120px로 찌그러져
    아래쪽 줄이 다음 카드에 가려지고 버튼이 눌리지 않는다) */
-#colabCard,
-#llmCard {
+#colabCard {
   flex: 0 0 auto;
   min-height: 0;
 }
+
+/* LLM은 쓰는 사람이 적어서 카드가 아니라 한 줄만 둔다. 설정은 dlgLlm에서 받는다. */
+.llm-strip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.llm-strip .status { margin-left: auto; }
+
+.llm-fields { display: flex; flex-direction: column; gap: 10px; }
+
+.llm-field { display: flex; align-items: center; gap: 8px; }
+
+.llm-field > span {
+  min-width: 72px;
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.llm-field input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--btn-border);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.llm-note { margin: 12px 0 0; line-height: 1.6; }
+.llm-note code { font-size: 11.5px; }
+
+/* 상태는 버튼 왼쪽에 붙여 어느 버튼에 대한 결과인지 바로 보이게 한다 */
+.llm-dlg-status { margin-right: auto; text-align: left; }
 
 .list-header {
   display: flex;
