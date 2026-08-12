@@ -33,10 +33,13 @@ import random
 import shutil
 from collections import Counter
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
+from paths import DATASET  # noqa: E402
 
 from PIL import Image
 
-DS = Path(r"E:/AI_CCTV_DATASET")
+DS = DATASET
 AIHUB = DS / "original/aihub_data_bbox/image"
 FIELDSET = DS / "fieldset_v1_label"
 

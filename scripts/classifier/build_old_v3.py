@@ -32,10 +32,13 @@ import random
 import shutil
 from collections import Counter
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
+from paths import DATASET  # noqa: E402
 
 from PIL import Image
 
-DS = Path(r"E:/AI_CCTV_DATASET")
+DS = DATASET
 S20 = DS / "original/rename_data_s20_s22_bbox"
 
 # 코드 -> 야장에서 쓰는 항목명 (야장 보유량 집계에 쓴다)

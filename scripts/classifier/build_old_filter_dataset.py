@@ -20,10 +20,13 @@ import csv
 import random
 from collections import Counter, defaultdict
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
+from paths import DATASET  # noqa: E402
 
 from PIL import Image
 
-SRC = Path(r"E:/AI_CCTV_DATASET/yajang_frames")
+SRC = DATASET / "yajang_frames"
 
 
 def main():

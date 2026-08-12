@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
+from paths import DATASET, RESULTS  # noqa: E402
 
 import torch
 from PIL import Image
@@ -29,7 +32,7 @@ from torchvision import transforms
 from eval_binary import roc_auc
 from train_binary import build_model
 
-RUNS = Path(r"E:/AI_CCTV_RESULTS/filter/runs")
+RUNS = RESULTS / "filter/runs"
 MODELS = {
     "v1 best(ep9)": RUNS / "OLD_v1-20260811T135759Z-1-001/OLD_v1/best.pt",
     "v1 last(ep24)": RUNS / "OLD_v1-20260811T135759Z-1-001/OLD_v1/last.pt",
@@ -37,8 +40,8 @@ MODELS = {
     "v2 last(ep14)": RUNS / "OLD_v2-20260811T152820Z-1-001/OLD_v2/last.pt",
 }
 SETS = {
-    "AIHub holdout": Path(r"E:/AI_CCTV_DATASET/aihub_holdout/val"),
-    "야장 val": Path(r"E:/AI_CCTV_DATASET/clsdata_old_v1/val"),
+    "AIHub holdout": DATASET / "aihub_holdout/val",
+    "야장 val": DATASET / "clsdata_old_v1/val",
 }
 
 

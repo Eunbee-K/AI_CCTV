@@ -32,10 +32,13 @@ import sys
 from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
+from paths import DATASET  # noqa: E402
 
 from PIL import Image
 
-DATASET_ROOT = Path(r"E:/AI_CCTV_DATASET")
+DATASET_ROOT = DATASET
 AIHUB = DATASET_ROOT / "original/aihub_data_bbox/image"
 S20S22 = DATASET_ROOT / "original/rename_data_s20_s22_bbox"
 

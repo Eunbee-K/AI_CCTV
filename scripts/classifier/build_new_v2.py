@@ -27,6 +27,9 @@ import shutil
 import sys
 from collections import Counter
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
+from paths import DATASET, RESULTS  # noqa: E402
 
 import torch
 from PIL import Image
@@ -35,8 +38,8 @@ from torchvision import transforms
 
 from train_binary import build_model
 
-DS = Path(r"E:/AI_CCTV_DATASET")
-V1_CKPT = Path(r"E:/AI_CCTV_RESULTS/filter/best.pt")
+DS = DATASET
+V1_CKPT = RESULTS / "filter/best.pt"
 OUTSIDE_THRESHOLD = 0.5    # v1이 이 아래를 주면 관 밖으로 본다
 
 

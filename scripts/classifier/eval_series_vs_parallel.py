@@ -39,11 +39,13 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts" / "fieldset"))
 sys.path.insert(0, str(ROOT / "apps" / "AI_CCTV"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
+from paths import DATASET, SANGMYEON_0128  # noqa: E402
 
 from build_field_dataset import longest_nondecreasing, read_distance  # noqa: E402
 
-DS = Path(r"E:/AI_CCTV_DATASET")
-SRC = Path(r"C:/Users/SAMSUNG/Desktop/상면 CCTV/20260128.가평군 상면 노후하수관로 정비공사")
+DS = DATASET
+SRC = SANGMYEON_0128
 TOL_M = 1.0
 
 

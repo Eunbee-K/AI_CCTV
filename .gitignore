@@ -41,3 +41,7 @@ apps/AI_CCTV/tunnel.log
 
 # 참고용 외부 연구자료 PDF (배포 대상 아님, 용량이 크다)
 docs/*.pdf
+
+# Claude 대화기록/기억 사본 — 다른 PC에서 이어서 하려고 드라이브에 옮겨둔 것.
+# 용량이 크고 저장소에 들어갈 내용이 아니다. docs/HANDOFF.md 참고.
+.handoff/

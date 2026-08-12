@@ -23,10 +23,13 @@ import csv
 import shutil
 from collections import Counter
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
+from paths import DATASET  # noqa: E402
 
 from PIL import Image
 
-SRC = Path(r"E:/AI_CCTV_DATASET/fieldset_v1_label")
+SRC = DATASET / "fieldset_v1_label"
 
 
 def main():
