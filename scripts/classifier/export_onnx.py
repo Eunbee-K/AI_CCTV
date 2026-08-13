@@ -33,7 +33,12 @@ def main():
 
     ck = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     arch, img = ck.get("arch", "effb0"), ck.get("img", 224)
-    print(f"체크포인트 epoch {ck.get('epoch')} | arch {arch} | img {img}")
+    gray = bool(ck.get("gray", False))
+    print(f"체크포인트 epoch {ck.get('epoch')} | arch {arch} | img {img} | gray {gray}")
+    if gray:
+        # 흑백 학습본은 추론도 흑백이어야 한다. 전처리가 어긋나면 모델이 본 적
+        # 없는 그림이 들어가고, 성능이 아니라 측정이 통째로 무너진다.
+        print("  ** 흑백으로 학습된 모델이다. 앱에서 FILTER_GRAYSCALE=1 로 켤 것 **")
 
     model = build_model(arch)
     model.load_state_dict(ck["model"])
