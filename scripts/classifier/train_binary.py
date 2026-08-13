@@ -219,6 +219,8 @@ def main():
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--img", type=int, default=224)
+    ap.add_argument("--gray", action="store_true",
+                    help="흑백으로 학습(3채널 복제). 추론도 흑백이어야 한다")
     ap.add_argument("--init", default="", help="이 체크포인트의 가중치에서 시작(백본 재사용)")
     ap.add_argument("--reset-head", action="store_true",
                     help="--init과 함께. 분류층만 초기화한다")
@@ -230,16 +232,37 @@ def main():
     print(f"device={device} arch={args.arch}")
 
     norm = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+
+    # **--gray: 색을 아예 지운다.** 학습 데이터와 실영상의 색조가 계통적으로 다르다.
+    # 현장·카메라·조명이 다르니 당연한데, 모델이 결함의 생김새 대신 그 색조를
+    # 배우면 실영상에서 무너진다. 실측(2026-08-12):
+    #
+    #             R-B(파란 기운)   채도
+    #   야장 학습      -16.4      0.136
+    #   AIHub 학습     -27.2      0.242
+    #   SM2 실영상      -7.5      0.090
+    #   JB 실영상       -3.9      0.121
+    #
+    # 3채널로 복제해서 넘긴다 — 사전학습 가중치를 그대로 쓰기 위해서다.
+    # 채널이 같아지므로 ColorJitter의 saturation/hue는 무의미해져 밝기·대비만 남긴다.
+    gray = [transforms.Grayscale(num_output_channels=3)] if args.gray else []
+    jitter = (transforms.ColorJitter(brightness=0.3, contrast=0.3) if args.gray
+              else transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2))
+
     train_tf = transforms.Compose([
         transforms.RandomResizedCrop(args.img, scale=(0.7, 1.0), ratio=(0.85, 1.18)),
         transforms.RandomHorizontalFlip(),
-        transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
+        *gray, jitter,
         transforms.ToTensor(), norm,
     ])
     val_tf = transforms.Compose([
         transforms.Resize(args.img), transforms.CenterCrop(args.img),
+        *gray,
         transforms.ToTensor(), norm,
     ])
+    if args.gray:
+        print("gray=on — 흑백으로 학습한다. **추론도 반드시 흑백이어야 한다**"
+              " (FILTER_GRAYSCALE=1)")
 
     manifest = load_manifest(root)
     train_ds = FrameDataset(root, "train", train_tf, manifest)
@@ -325,6 +348,9 @@ def main():
             "sched": sched.state_dict(), "epoch": epoch,
             "best_auc": max(best_auc, m["auc"]), "f1": m["f1"],
             "arch": args.arch, "img": args.img,
+            # 추론 전처리가 학습과 달라지면 잰 값이 전부 무효다(8/12에 실제로 겪었다).
+            # 흑백 여부를 체크포인트에 박아둬 배포할 때 확인할 수 있게 한다.
+            "gray": bool(args.gray),
         }
         torch.save(ck, ckpt_path)
         if m["auc"] > best_auc:

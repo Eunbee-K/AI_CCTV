@@ -113,6 +113,11 @@ FILTER_TOP_RATIO = float(os.getenv("FILTER_TOP_RATIO", "0.20"))
 # lead/series는 이 값을 쓰지 않는다 — 순위로 자른다.
 FILTER_THRESHOLD = float(os.getenv("FILTER_THRESHOLD", "0.032"))
 FILTER_BATCH_SIZE = int(os.getenv("FILTER_BATCH_SIZE", "16"))
+# **모델을 흑백으로 학습했으면 반드시 1이어야 한다.** 학습과 추론 전처리가
+# 어긋나면 모델이 본 적 없는 그림이 들어가 성능이 아니라 측정이 무너진다.
+# 학습 체크포인트의 "gray" 값과 맞춰야 한다(train_binary.py --gray).
+# 지금 배포본 OLD_v3는 컬러로 학습했으므로 0.
+FILTER_GRAYSCALE = os.getenv("FILTER_GRAYSCALE", "0").strip() in ("1", "true", "on")
 # 필터가 만드는 행의 상한(영상당). **0이면 무제한** — lead 모드는 필터가 잡은 것을
 # 전부 보여주는 게 목적이므로 기본이 무제한이다. 필터가 오작동해 표가 수백 줄로
 # 불어나면 여기에 숫자를 넣어 막는다.

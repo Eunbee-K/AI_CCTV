@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from PIL import Image
 
-from .config import FILTER_BATCH_SIZE, FILTER_MODEL_PATH
+from .config import FILTER_BATCH_SIZE, FILTER_GRAYSCALE, FILTER_MODEL_PATH
 
 # ImageNet 통계. 사전학습 백본을 파인튜닝했으므로 학습 때와 같은 값을 써야 한다.
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(3, 1, 1)
@@ -80,6 +80,12 @@ def _preprocess(path: Path) -> Optional[np.ndarray]:
             im = im.convert("RGB")
             im = im.resize((_SIZE_STORE, _SIZE_STORE), Image.BILINEAR)
             im = im.resize((_SIZE_INPUT, _SIZE_INPUT), Image.BILINEAR)
+            if FILTER_GRAYSCALE:
+                # **학습을 흑백으로 했으면 여기도 흑백이어야 한다.** 어긋나면
+                # 모델이 본 적 없는 그림이 들어가고, 성능이 아니라 측정이 무너진다
+                # (2026-08-12에 평가 스크립트에서 실제로 겪었다).
+                # 3채널 복제 — 학습의 Grayscale(num_output_channels=3)과 같다.
+                im = im.convert("L").convert("RGB")
             arr = np.asarray(im, dtype=np.float32) / 255.0
     except Exception:
         return None
