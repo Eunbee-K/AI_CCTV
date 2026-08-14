@@ -136,6 +136,32 @@ def evaluate(model, loader, device, classes: list[str]):
             "bin_f1": 2 * prec * rec / max(prec + rec, 1e-9)}
 
 
+@torch.no_grad()
+def recall_at_fpr(model, loader, device, classes: list[str], fpr: float = 0.05):
+    """정상 오탐률을 고정한 지점의 결함 재현율 — **필터로서의 성능**.
+
+    위 `evaluate`의 bin_recall은 argmax 기준이라 임계값을 못 옮긴다. 필터는
+    "정상을 5%만 버리는 대신 결함을 얼마나 건지나"로 평가해야 이진 모델과
+    같은 잣대에 오른다(`score_testset_bycode.py`가 쓰는 기준과 같다).
+    """
+    model.eval()
+    normal_idx = [i for i, c in enumerate(classes) if c in NORMAL_CLASSES]
+    scores, is_def = [], []
+    for x, y in loader:
+        x = x.to(device, non_blocking=True)
+        with torch.autocast(device.type, enabled=device.type == "cuda"):
+            p = torch.softmax(model(x).float(), 1)
+        scores.append((1.0 - p[:, normal_idx].sum(1)).cpu())   # 정상이 아닐 확률
+        is_def.append(torch.tensor([int(v.item()) not in set(normal_idx) for v in y]))
+    s = torch.cat(scores)
+    d = torch.cat(is_def)
+    neg = sorted(s[~d].tolist(), reverse=True)
+    if not neg or not d.any():
+        return 0.0
+    thr = neg[max(0, int(len(neg) * fpr) - 1)]
+    return (s[d] >= thr).float().mean().item()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", required=True)
@@ -186,7 +212,7 @@ def main():
     scaler = torch.amp.GradScaler(device.type, enabled=device.type == "cuda")
     crit = nn.CrossEntropyLoss(label_smoothing=0.05)
 
-    best = {"acc": 0.0, "bin_f1": 0.0}
+    best = {"acc": 0.0, "bin_f1": 0.0, "rec@fpr": 0.0}
     start_epoch = 0
     ckpt_path = out / "last.pt"
     if ckpt_path.exists():
@@ -216,9 +242,11 @@ def main():
         sched.step()
 
         m = evaluate(model, val_ld, device, classes)
+        m["rec@fpr"] = recall_at_fpr(model, val_ld, device, classes)
         print(f"[epoch {epoch}] loss {run_loss/max(seen,1):.4f} | "
               f"acc {m['acc']:.4f} | 이진환산 P {m['bin_precision']:.4f} "
-              f"R {m['bin_recall']:.4f} F1 {m['bin_f1']:.4f} | {time.time()-t0:.0f}s")
+              f"R {m['bin_recall']:.4f} F1 {m['bin_f1']:.4f} | "
+              f"오탐5% 재현율 {m['rec@fpr']:.4f} | {time.time()-t0:.0f}s")
         worst = sorted(m["per_class"].items(), key=lambda kv: kv[1])[:6]
         print("    재현율 낮은 클래스:", ", ".join(f"{c} {r:.2f}" for c, r in worst))
 
@@ -228,7 +256,8 @@ def main():
               "arch": args.arch, "img": args.img, "gray": bool(args.gray),
               "classes": classes}
         torch.save(ck, ckpt_path)
-        for key, fname in (("acc", "best_acc.pt"), ("bin_f1", "best_binF1.pt")):
+        for key, fname in (("acc", "best_acc.pt"), ("bin_f1", "best_binF1.pt"),
+                           ("rec@fpr", "best_recall.pt")):
             if m[key] > best[key]:
                 best[key] = m[key]
                 torch.save(ck, out / fname)
