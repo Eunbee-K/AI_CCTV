@@ -122,6 +122,15 @@ FILTER_GRAYSCALE = os.getenv("FILTER_GRAYSCALE", "0").strip() in ("1", "true", "
 # 전부 보여주는 게 목적이므로 기본이 무제한이다. 필터가 오작동해 표가 수백 줄로
 # 불어나면 여기에 숫자를 넣어 막는다.
 FILTER_MAX_MISS_ROWS = int(os.getenv("FILTER_MAX_MISS_ROWS", "0"))
+# 관 밖(맨홀·지상 전경) 잘라내기. 자막 거리가 이 값 미만이면 아직 관 밖으로 본다.
+# 필터가 관 밖을 100% 결함이라 부르기 때문에 필요하다(학습 데이터에 관 밖 정상이
+# 한 장도 없다 — build_old_v2.py가 AIHub OUT_*을 뺐다). 테스트셋 실측:
+#   관 안쪽 IN 0.0158 / PJ 0.0187   ← 정확
+#   관 밖   OUT_* 중앙값 0.9762     ← 전부 결함이라 판정
+OUTSIDE_DIST_M = float(os.getenv("OUTSIDE_DIST_M", "0.5"))
+# 앞에서부터 몇 프레임까지 훑을지. 카메라는 한 번 들어가면 안 나오므로 앞부분만 본다.
+# 프레임당 OCR이 1~2초라 무한정 훑으면 느려진다.
+OUTSIDE_SCAN_MAX = int(os.getenv("OUTSIDE_SCAN_MAX", "120"))
 
 # ───────── LLM 판독 (세 번째 의견) ─────────
 # 필터가 고른 구간에 YOLO와 나란히 이름을 붙이는 두 번째 판독자.

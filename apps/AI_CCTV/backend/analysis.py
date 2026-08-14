@@ -9,6 +9,7 @@ import cv2
 from . import defect_filter, llm_infer, session_store, ws_manager
 from .annotate import annotate_frame
 from .config import (FILTER_MAX_MISS_ROWS, FILTER_MODE, FILTER_THRESHOLD,
+                     OUTSIDE_DIST_M, OUTSIDE_SCAN_MAX,
                      FILTER_TOP_RATIO,
                      FRAME_INTERVAL)
 from .frames import extract_frames, seconds_to_mmss
@@ -146,6 +147,40 @@ def _filter_only_frames(frames, probs: Dict[str, float], yolo_times: set) -> Lis
     return [max(run, key=lambda x: x[2]) for run in runs]
 
 
+def _outside_frames(frames) -> set:
+    """관 밖(맨홀·지상 전경) 구간의 프레임. 자막 거리가 0에 가까운 앞부분이다.
+
+    **필터는 관 밖을 결함이라고 부른다.** 학습 데이터에 관 밖 정상이 한 장도 없어서다
+    (`build_old_v2.py`가 AIHub OUT_*을 일부러 뺐다 — v1이 "관 밖 = 정상"만 배워
+    망가진 것을 피하려던 것인데, 아예 안 보여주니 판단할 근거가 없어졌다).
+
+    테스트셋 실측: 관 밖 40장을 **100% 결함으로 판정**한다(중앙값 0.976).
+    관 안쪽은 정확하다 — IN 0.0158 / PJ 0.0187.
+
+    조사 영상은 늘 관 밖에서 시작하므로, 이 구간이 상위 순위를 차지해 진짜 결함을
+    밀어낸다. 모델을 고치기 전까지 거리로 잘라낸다.
+
+    카메라는 한 번 들어가면 다시 안 나오므로 앞에서부터 훑다가 거리가 잡히면 멈춘다
+    — 전 프레임을 OCR하면 프레임당 1~2초씩 든다.
+    """
+    outside, checked = set(), 0
+    for f in sorted(frames, key=_frame_sec):
+        if checked >= OUTSIDE_SCAN_MAX:
+            break
+        checked += 1
+        m = re.search(r"(\d+(?:\.\d+)?)", ocr_distance_from_frame(Path(f)) or "")
+        if m and float(m.group(1)) >= OUTSIDE_DIST_M:
+            break                      # 관 안으로 들어왔다
+        outside.add(str(f))
+    if outside:
+        secs = sorted(_frame_sec(f) for f in outside)
+        ws_manager.log(
+            f" - 관 밖으로 판단해 제외: {len(outside)}프레임 "
+            f"({seconds_to_mmss(secs[0])}~{seconds_to_mmss(secs[-1])})"
+        )
+    return outside
+
+
 def _filter_runs(frames, probs: Dict[str, float]) -> List[List[Path]]:
     """필터가 "결함"이라 본 구간들. 각 구간은 이어진 프레임 묶음이다.
 
@@ -157,6 +192,10 @@ def _filter_runs(frames, probs: Dict[str, float]) -> List[List[Path]]:
     하나의 결함은 보통 여러 프레임에 걸쳐 보인다. 프레임마다 행을 만들면 같은
     결함이 열 줄로 늘어나므로, 이어진 것끼리 한 구간으로 묶어 한 행만 만든다.
     """
+    # 관 밖은 후보에서 뺀다 — 필터가 100% 결함이라 부르는 구간이다
+    outside = _outside_frames(frames)
+    frames = [f for f in frames if str(f) not in outside] or list(frames)
+
     ranked = sorted(frames, key=lambda f: -probs.get(str(f), 0.0))
     keep_n = max(1, round(len(frames) * FILTER_TOP_RATIO))
     kept = sorted(ranked[:keep_n], key=lambda f: _frame_sec(f))
