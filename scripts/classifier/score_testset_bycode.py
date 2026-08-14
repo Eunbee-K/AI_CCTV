@@ -60,9 +60,23 @@ def score(model: Path, files, gray: bool) -> dict:
     ck = torch.load(model, map_location="cpu", weights_only=False)
     if bool(ck.get("gray", False)) != gray:
         print(f"  ! 경고: 체크포인트 gray={ck.get('gray')} 인데 --gray={gray}")
-    net = build_model(ck.get("arch", "effb0"))
+
+    # **다중 클래스 모델도 같은 판에서 잰다.** 체크포인트에 classes가 있으면
+    # 다중이다. "정상 클래스가 아닐 확률"로 환산하면 이진 모델과 직접 비교된다.
+    classes = ck.get("classes")
+    if classes:
+        from train_multiclass import NORMAL_CLASSES, build_model as build_mc
+        net = build_mc(ck.get("arch", "effb0"), len(classes))
+        normal_idx = [i for i, c in enumerate(classes) if c in NORMAL_CLASSES]
+        print(f"  다중 클래스 {len(classes)}종 · 정상 클래스 "
+              f"{[classes[i] for i in normal_idx]}")
+    else:
+        net = build_model(ck.get("arch", "effb0"))
+        normal_idx = None
     net.load_state_dict(ck["model"])
     net.eval()
+
+    size = ck.get("img", 224)
     mean = np.array([0.485, 0.456, 0.406], np.float32).reshape(3, 1, 1)
     std = np.array([0.229, 0.224, 0.225], np.float32).reshape(3, 1, 1)
     out = {}
@@ -71,12 +85,16 @@ def score(model: Path, files, gray: bool) -> dict:
             batch = []
             for f in files[i:i + 32]:
                 im = Image.open(f).convert("RGB").resize((256, 256), Image.BILINEAR)
-                im = im.resize((224, 224), Image.BILINEAR)
+                im = im.resize((size, size), Image.BILINEAR)
                 if gray:
                     im = im.convert("L").convert("RGB")
                 a = np.asarray(im, np.float32) / 255.0
                 batch.append((a.transpose(2, 0, 1) - mean) / std)
-            p = torch.softmax(net(torch.from_numpy(np.stack(batch))), 1)[:, 1]
+            prob = torch.softmax(net(torch.from_numpy(np.stack(batch))), 1)
+            if normal_idx is None:
+                p = prob[:, 1]
+            else:
+                p = 1.0 - prob[:, normal_idx].sum(1)      # 정상이 아닐 확률
             for f, v in zip(files[i:i + 32], p.tolist()):
                 out[str(f)] = v
     return out

@@ -29,7 +29,7 @@ from pathlib import Path
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # scripts/
-from paths import DATASET  # noqa: E402
+from paths import FILTER_DATA  # noqa: E402
 
 
 def main():
@@ -43,9 +43,9 @@ def main():
     ap.add_argument("--out", default="")
     args = ap.parse_args()
 
-    src = DATASET / args.src
+    src = FILTER_DATA / args.src
     suffix = f"{args.size}_gray" if args.gray else f"{args.size}"
-    out = Path(args.out) if args.out else DATASET / f"{args.src}_{suffix}"
+    out = Path(args.out) if args.out else FILTER_DATA / f"{args.src}_{suffix}"
     if not src.is_dir():
         raise SystemExit(f"없는 폴더: {src}")
     if out.exists():
