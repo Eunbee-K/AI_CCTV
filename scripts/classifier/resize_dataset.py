@@ -37,11 +37,15 @@ def main():
     ap.add_argument("--src", required=True, help="DATASET 아래 폴더 이름")
     ap.add_argument("--size", type=int, default=384)
     ap.add_argument("--quality", type=int, default=92)
+    ap.add_argument("--gray", action="store_true",
+                    help="흑백으로 저장(3채널 복제). ultralytics에는 흑백 옵션이 "
+                         "없어 YOLO-cls와 조건을 맞추려면 데이터를 미리 흑백으로 만든다")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
 
     src = DATASET / args.src
-    out = Path(args.out) if args.out else DATASET / f"{args.src}_{args.size}"
+    suffix = f"{args.size}_gray" if args.gray else f"{args.size}"
+    out = Path(args.out) if args.out else DATASET / f"{args.src}_{suffix}"
     if not src.is_dir():
         raise SystemExit(f"없는 폴더: {src}")
     if out.exists():
@@ -58,6 +62,10 @@ def main():
             with Image.open(f) as im:
                 bytes_in += f.stat().st_size
                 im = im.convert("RGB").resize((args.size, args.size), Image.BILINEAR)
+                if args.gray:
+                    # 학습(Grayscale(3))·추론(convert("L").convert("RGB"))과
+                    # 픽셀 단위로 같은 결과다.
+                    im = im.convert("L").convert("RGB")
                 im.save(dst, "JPEG", quality=args.quality)
             bytes_out += dst.stat().st_size
             n += 1
