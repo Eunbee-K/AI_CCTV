@@ -22,7 +22,7 @@ import argparse
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
-from paths import DATASET, RESULTS  # noqa: E402
+from paths import DATASET, FILTER_DATA, RESULTS  # noqa: E402
 
 import torch
 from PIL import Image
@@ -40,8 +40,8 @@ MODELS = {
     "v2 last(ep14)": RUNS / "OLD_v2-20260811T152820Z-1-001/OLD_v2/last.pt",
 }
 SETS = {
-    "AIHub holdout": DATASET / "aihub_holdout/val",
-    "야장 val": DATASET / "clsdata_old_v1/val",
+    "AIHub holdout": FILTER_DATA / "aihub_holdout/val",
+    "야장 val": FILTER_DATA / "clsdata_old_v1/val",
 }
 
 

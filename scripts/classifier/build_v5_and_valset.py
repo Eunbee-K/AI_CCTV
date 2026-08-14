@@ -37,12 +37,12 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # scripts/
-from paths import DATASET  # noqa: E402
+from paths import DATASET, FILTER_DATA  # noqa: E402
 
 ORIG = DATASET / "original"
 S20 = ORIG / "rename_data_s20_s22_bbox"
 AIHUB = ORIG / "aihub_data_bbox" / "image"
-V3 = DATASET / "clsdata_old_v3"                  # 야장 프레임이 복사돼 있는 곳
+V3 = FILTER_DATA / "clsdata_old_v3"                  # 야장 프레임이 복사돼 있는 곳
 
 VAL_PER_CODE = 10
 TRAIN_PER_CODE = 100
@@ -150,8 +150,8 @@ def main():
     args = ap.parse_args()
     random.seed(args.seed)
 
-    train_out = DATASET / "clsdata_old_v5"
-    val_out = DATASET / "valset_bycode"
+    train_out = FILTER_DATA / "clsdata_old_v5"
+    val_out = FILTER_DATA / "valset_bycode"
     for d in (train_out, val_out):
         rmtree_retry(d)
     for lab in ("defect", "normal"):

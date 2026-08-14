@@ -40,9 +40,9 @@ import cv2
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # scripts/
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps" / "AI_CCTV"))
-from paths import DATASET, FIELD_VIDEO  # noqa: E402
+from paths import DATASET, FIELD_VIDEO, FILTER_DATA  # noqa: E402
 
-YAJANG = DATASET / "yajang_frames" / "yajang.csv"
+YAJANG = FILTER_DATA / "yajang_frames" / "yajang.csv"
 MIN_DIST_M = 0.5        # 이보다 앞은 맨홀·관 밖으로 본다
 
 

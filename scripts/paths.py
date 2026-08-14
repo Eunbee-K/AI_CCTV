@@ -36,6 +36,11 @@ def _dir(env: str, name: str) -> Path:
 DATASET = _dir("AI_CCTV_DATASET_DIR", "AI_CCTV_DATASET")
 RESULTS = _dir("AI_CCTV_RESULTS_DIR", "AI_CCTV_RESULTS")
 
+# Stage-1 필터 관련 데이터는 여기 모아둔다(2026-08-14 정리).
+# clsdata_*, valset_*, testset_*, yajang_frames, 평가 캐시 등. 데이터셋 루트에
+# 흩어져 있으면 검출·세그멘테이션 자료와 섞여 뭐가 뭔지 알 수 없다.
+FILTER_DATA = DATASET / "filter"
+
 # 현장 검증용 영상 + 한글 조사표. 원래 바탕화면에 있었는데 외장하드만 들고
 # 다니려고 여기로 옮겼다(2026-08-12).
 FIELD_VIDEO = DATASET / "video" / "상면 CCTV"

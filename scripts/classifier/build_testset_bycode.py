@@ -30,12 +30,12 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # scripts/
-from paths import DATASET  # noqa: E402
+from paths import DATASET, FILTER_DATA  # noqa: E402
 
 ORIG = DATASET / "original"
 S20 = ORIG / "rename_data_s20_s22_bbox"
 AIHUB = ORIG / "aihub_data_bbox" / "image"
-TRAINED = DATASET / "clsdata_old_v3"
+TRAINED = FILTER_DATA / "clsdata_old_v3"
 
 # 정상 구성 — 실제 영상 구성에 맞춘 비율
 NORMAL_MIX = {"PJ": 0.60, "IN": 0.20, "OUT": 0.20}
@@ -96,7 +96,7 @@ def main():
     args = ap.parse_args()
     random.seed(args.seed)
 
-    out = Path(args.out) if args.out else DATASET / "testset_bycode"
+    out = Path(args.out) if args.out else FILTER_DATA / "testset_bycode"
     if out.exists():
         shutil.rmtree(out)
     (out / "defect").mkdir(parents=True)

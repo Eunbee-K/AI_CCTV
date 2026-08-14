@@ -30,11 +30,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # scripts/
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps" / "AI_CCTV"))
-from paths import DATASET  # noqa: E402
+from paths import DATASET, FILTER_DATA  # noqa: E402
 
 VIDEO_DIR = Path(r"C:/Users/SAMSUNG/Desktop/CCTV/검증용 영상data")
 XLSX = Path(r"C:/Users/SAMSUNG/Desktop/CCTV/인식률.xlsx")
-CACHE = DATASET / "pipeline_eval_cache"
+CACHE = FILTER_DATA / "pipeline_eval_cache"
 TOL_M = 0.3
 TOL_S = 3.0
 

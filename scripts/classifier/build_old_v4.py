@@ -40,10 +40,10 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # scripts/
-from paths import DATASET  # noqa: E402
+from paths import DATASET, FILTER_DATA  # noqa: E402
 
-OLD = DATASET / "clsdata_old_v3"
-VID = DATASET / "clsdata_v2"
+OLD = FILTER_DATA / "clsdata_old_v3"
+VID = FILTER_DATA / "clsdata_v2"
 
 # clsdata_v2의 관로 폴더명 -> 야장 관로번호. 폴더명이 잘려 저장된 것이 있어
 # 앞부분만으로 맞춘다(예: "SM1-131-001(재시공, 역구배 관처짐 연결부").
@@ -81,7 +81,7 @@ def main():
                     help="영상 정상을 몇 배로 넣을지. 24,302장 대비 1,058장은 4%%뿐이다")
     args = ap.parse_args()
 
-    out = Path(args.out) if args.out else DATASET / "clsdata_old_v4"
+    out = Path(args.out) if args.out else FILTER_DATA / "clsdata_old_v4"
     for split in ("train", "val"):
         for lab in ("normal", "defect"):
             (out / split / lab).mkdir(parents=True, exist_ok=True)

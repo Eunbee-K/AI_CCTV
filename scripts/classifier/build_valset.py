@@ -30,13 +30,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # scripts/
 sys.path.insert(0, str(Path(__file__).resolve().parent))              # scripts/classifier/
-from paths import DATASET  # noqa: E402
+from paths import DATASET, FILTER_DATA  # noqa: E402
 from build_v5_and_valset import (  # noqa: E402
     NORMAL_MIX, VAL_PER_CODE, V3, YAJANG_NAME_TO_CODE, interleave,
     rmtree_retry, scan_all,
 )
 
-TRAIN = DATASET / "clsdata_old_v5"
+TRAIN = FILTER_DATA / "clsdata_old_v5"
 VAL_EXCLUDE = {"ETC"}
 
 
@@ -46,7 +46,7 @@ def main():
     args = ap.parse_args()
     random.seed(args.seed)
 
-    val_out = DATASET / "valset_bycode"
+    val_out = FILTER_DATA / "valset_bycode"
     rmtree_retry(val_out)
     for lab in ("defect", "normal"):
         (val_out / lab).mkdir(parents=True)

@@ -20,10 +20,10 @@ from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # scripts/
-from paths import DATASET  # noqa: E402
+from paths import DATASET, FILTER_DATA  # noqa: E402
 
-TRAIN = DATASET / "clsdata_old_v5"
-VAL = DATASET / "valset_bycode"
+TRAIN = FILTER_DATA / "clsdata_old_v5"
+VAL = FILTER_DATA / "valset_bycode"
 
 
 def rows(p: Path) -> list:

@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # scripts/
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "apps" / "AI_CCTV"))
-from paths import DATASET  # noqa: E402
+from paths import DATASET, FILTER_DATA  # noqa: E402
 
 
 def auc(pos, neg) -> float:
@@ -93,7 +93,7 @@ def main():
                     help="정상 오탐률을 이 값으로 고정하고 재현율을 본다")
     args = ap.parse_args()
 
-    root = Path(args.testset) if args.testset else DATASET / "testset_bycode"
+    root = Path(args.testset) if args.testset else FILTER_DATA / "testset_bycode"
     with open(root / "manifest.csv", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
     files = [root / r["label"] / r["file"] for r in rows]
