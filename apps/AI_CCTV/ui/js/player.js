@@ -320,7 +320,11 @@ export function renderQueue(list) {
     li.textContent = item.name;
     li.dataset.name = item.name;
     if (item.name === player.name) li.classList.add("selected");
-    li.addEventListener("click", () => selectVideo(item.name));
+    li.addEventListener("click", () => {
+      // 직접 고른 것은 분석이 화면을 끌고 다니지 말라는 뜻이다(app.js가 듣는다).
+      window.dispatchEvent(new CustomEvent("video-picked-by-user"));
+      selectVideo(item.name);
+    });
     videoListEl.appendChild(li);
   }
 }

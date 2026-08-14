@@ -7,6 +7,10 @@ const logConsole = document.getElementById("logConsole");
 const statusEl = document.getElementById("status");
 const siteNameEl = document.getElementById("siteName");
 
+/** 분석이 끝낸 영상으로 화면을 따라 옮길지. 사용자가 직접 영상을 고르면 꺼진다. */
+let analysisFollow = true;
+window.addEventListener("video-picked-by-user", () => { analysisFollow = false; });
+
 /** 선택된 관로 구분("신설"/"노후"). 아무것도 안 골랐으면 "". */
 function getPipeCondition() {
   if (document.getElementById("condNew").checked) return "신설";
@@ -123,7 +127,18 @@ async function init() {
   on("progress", (msg) => {
     statusEl.textContent = `AI 분석중 (${msg.index}/${msg.total})`;
   });
-  on("result_update", refreshResults);
+  // 결과표는 선택한 영상 것만 담아온다(관로별 분리). 그래서 2번째 영상이 끝나도
+  // 화면이 1번째에 머물러 있으면 새 결과가 안 보인다 — 분석 중에는 방금 끝난
+  // 영상으로 따라가야 한다.
+  //
+  // 다만 사용자가 결과를 들여다보는 중이면 화면을 뺏으면 안 된다. 직접 영상을
+  // 고른 뒤에는 따라가지 않는다(analysisFollow가 꺼진다).
+  on("result_update", async (msg) => {
+    if (analysisFollow && msg.video && msg.video !== getCurrentVideo()) {
+      await selectVideo(msg.video);
+    }
+    await refreshResults();
+  });
   on("batch_done", async (msg) => {
     await refreshResults();
     const totalRows = msg.stats && typeof msg.stats.yolo === "number" ? msg.stats.yolo : 0;
@@ -239,6 +254,7 @@ async function init() {
       return;
     }
     try {
+      analysisFollow = true;   // 새 분석이니 다시 따라간다
       await api.runAnalysis();
     } catch (e) {
       alert(e.message);
