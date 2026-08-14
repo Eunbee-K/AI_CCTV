@@ -301,9 +301,11 @@ def main():
     scaler = torch.amp.GradScaler(device.type, enabled=device.type == "cuda")
     crit = nn.CrossEntropyLoss(label_smoothing=0.05)
 
-    # best 체크포인트는 AUC로 고른다. F1은 임계값 0.5 한 점에서만 잰 값이라,
-    # 필터로 쓸 때 중요한 "순위를 얼마나 잘 매기는가"를 반영하지 못한다.
-    start_epoch, best_auc = 0, 0.0
+    # **세 기준으로 각각 최고를 남긴다.** 어느 것이 실제로 좋은지는 학습 중에
+    # 알 수 없다 — AUC는 순위 품질, recall은 필터로서의 걸러내는 힘, F1은 임계값
+    # 0.5 한 점의 균형이라 서로 최고 epoch이 다르다. 실제 판에서 골라 쓴다.
+    start_epoch = 0
+    best = {"auc": 0.0, "recall": 0.0, "f1": 0.0}
     ckpt_path = out / "last.pt"
     if ckpt_path.exists():  # Colab 세션이 끊겼을 때 이어받기
         ck = torch.load(ckpt_path, map_location=device)
@@ -311,8 +313,9 @@ def main():
         opt.load_state_dict(ck["opt"])
         sched.load_state_dict(ck["sched"])
         start_epoch = ck["epoch"] + 1
-        best_auc = ck.get("best_auc", ck.get("best_f1", 0.0))
-        print(f"이어서 학습: epoch {start_epoch}부터 (best_auc={best_auc:.4f})")
+        best.update(ck.get("best", {}))
+        print(f"이어서 학습: epoch {start_epoch}부터 (best={best})")
+    best_auc = best["auc"]
 
     for epoch in range(start_epoch, args.epochs):
         model.train()
@@ -346,22 +349,42 @@ def main():
         ck = {
             "model": model.state_dict(), "opt": opt.state_dict(),
             "sched": sched.state_dict(), "epoch": epoch,
-            "best_auc": max(best_auc, m["auc"]), "f1": m["f1"],
+            "best": {k: max(v, {"auc": m["auc"],
+                                "recall": m["thresholds"][0.99][1],
+                                "f1": m["f1"]}[k]) for k, v in best.items()},
+            "auc": m["auc"], "f1": m["f1"],
             "arch": args.arch, "img": args.img,
             # 추론 전처리가 학습과 달라지면 잰 값이 전부 무효다(8/12에 실제로 겪었다).
             # 흑백 여부를 체크포인트에 박아둬 배포할 때 확인할 수 있게 한다.
             "gray": bool(args.gray),
         }
         torch.save(ck, ckpt_path)
-        if m["auc"] > best_auc:
-            best_auc = m["auc"]
-            torch.save(ck, out / "best.pt")
-            (out / "best_metrics.json").write_text(
-                json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-            print(f"    best 갱신 → {out / 'best.pt'}")
 
-    print(f"\n완료. best AUC {best_auc:.4f} → {out / 'best.pt'}")
+        # **기준마다 최고 epoch이 다르다.** AUC가 높은 모델이 필터로 최적이라는
+        # 보장이 없다 — 필터는 "결함을 놓치지 않으면서 얼마나 걸러내는가"가 일이고,
+        # 그건 recall 99% 지점의 제거율로 재야 한다. 세 기준을 따로 저장해두고
+        # 실제 판(검증셋·실영상)에서 골라 쓴다.
+        for key, score in (
+            ("auc", m["auc"]),
+            ("recall", m["thresholds"][0.99][1]),   # 결함 99% 살릴 때의 프레임 제거율
+            ("f1", m["f1"]),
+        ):
+            if score > best[key]:
+                best[key] = score
+                name = {"auc": "best_AUC.pt", "recall": "best_recall.pt",
+                        "f1": "best_F1.pt"}[key]
+                torch.save(ck, out / name)
+                (out / f"{name[:-3]}_metrics.json").write_text(
+                    json.dumps(m, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
+                print(f"    {key} 갱신 {score:.4f} → {name}")
+        best_auc = best["auc"]
+
+    print(f"\n완료 (epoch {args.epochs})")
+    print(f"  best_AUC.pt     AUC {best['auc']:.4f}")
+    print(f"  best_recall.pt  결함 99% 지점 제거율 {best['recall']:.1%}")
+    print(f"  best_F1.pt      F1 {best['f1']:.4f}")
+    print(f"  last.pt         마지막 epoch")
 
 
 if __name__ == "__main__":
