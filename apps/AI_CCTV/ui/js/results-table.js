@@ -31,14 +31,14 @@ function rowKey(video, time_s) {
 // 0:순번 1:시간 2:직경 3:거리 4:결함항목 5:등급 6:비고
 // 관로번호는 영상마다 하나뿐이라 행마다 반복할 이유가 없어 상단 입력칸으로 옮겼다.
 // 등급은 드롭다운이라 셀 편집(더블클릭) 대상이 아니다.
-const COL_DEFECTS = 4;
-const COL_GRADE = 5;
-const COL_COUNT = 7;                          // 구분선 colSpan용
+const COL_DEFECTS = 3;
+const COL_GRADE = 4;
+const COL_COUNT = 6;                          // 구분선 colSpan용
 const READONLY_COLS = new Set([0, 1, COL_GRADE]);
 const GRADES = ["소", "중", "대"];
 
 function editableFieldForColumn(colIdx) {
-  return ["", "", "dia", "dist", "defects", "", "note"][colIdx] || "";
+  return ["", "", "dist", "defects", "", "note"][colIdx] || "";
 }
 
 /** 표시용 결함 문구: "BK(파손), DS(토사퇴적)". 엑셀 보고서와 같은 순서로 맞춘다.
@@ -60,11 +60,10 @@ function cellValue(row, colIdx) {
   switch (colIdx) {
     case 0: return row.seq;
     case 1: return row.time_str;
-    case 2: return row.dia;
-    case 3: return row.dist;
-    case 4: return (row.defects || []).join(", ");
-    case 5: return row.grade || "중";
-    case 6: return row.note;
+    case 2: return row.dist;
+    case 3: return (row.defects || []).join(", ");
+    case 4: return row.grade || "중";
+    case 5: return row.note;
     default: return "";
   }
 }
@@ -194,7 +193,7 @@ function buildRowTr(row, extraClass, inGroup) {
   const key = rowKey(row.filename, row.time_s);
   if (selected.has(key)) tr.classList.add("row-selected");
 
-  const cols = [row.seq, row.time_str, row.dia, row.dist, defectsText(row), null, row.note];
+  const cols = [row.seq, row.time_str, row.dist, defectsText(row), null, row.note];
   cols.forEach((val, idx) => {
     const td = document.createElement("td");
     if (idx === COL_GRADE) {
@@ -374,7 +373,7 @@ export function renderResults(data) {
       // 다시 그려도 선택 표시가 유지되게 (토글 후 Enter 연속 조작에 필요)
       if (selected.has(`group:${groupKey}`)) tr.classList.add("row-selected");
 
-      const cols = [item.seq, item.time_str, item.dia, item.dist,
+      const cols = [item.seq, item.time_str, item.dist,
                     item.defects_summary, "", item.note];
       cols.forEach((val, idx) => {
         const td = document.createElement("td");

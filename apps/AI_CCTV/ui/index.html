@@ -32,6 +32,7 @@
         <span id="lblTime" class="time-label">00:00</span>
       </div>
 
+      <!-- serve_web_cpu.py는 이 카드를 CSS로 감춘다(로컬 CPU 전용). -->
       <div class="list-card" id="colabCard">
         <div class="list-header">
           <span class="list-title">추론 서버 (Colab)</span>
@@ -125,7 +126,6 @@
               <tr>
                 <th class="col-seq">순번</th>
                 <th class="col-time">시간</th>
-                <th class="col-dia">직경</th>
                 <th class="col-dist">거리</th>
                 <th class="col-defects">결함항목</th>
                 <th class="col-grade">등급</th>
@@ -196,7 +196,8 @@
     <h3 class="dlg-title">LLM 판독 (Gemini + GPT)</h3>
     <p class="dlg-sub">
       필터가 찾은 구간에 YOLO와 나란히 결함 이름을 붙입니다.
-      <b>외부 API를 호출하므로 회사망에서는 켜지지 않습니다.</b>
+      <b>회사 서버(GPU)를 못 쓰고 인터넷만 되는 환경</b>에서 쓰는 보조 경로입니다.
+      호출은 이 PC에서 직접 나가므로 외부가 막힌 사내망에서는 켜지지 않습니다.
     </p>
 
     <div class="llm-fields">

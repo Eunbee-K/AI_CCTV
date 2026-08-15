@@ -397,19 +397,11 @@ def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
         cls_only = [c for c in cls_names if c not in yolo_names]
         llm_only = [c for c in llm_names if c not in yolo_names and c not in cls_names]
 
-        note = ""
-        if not defects:
-            # 아무도 이름을 못 붙인 구간. 결함항목은 검수자가 고른다.
-            note = "확인필요(이름 미부여)"
-        elif not yolo_names:
-            note = "분류기 판독" if cls_only else "LLM 판독"
-        else:
-            add = ([f"분류기: {', '.join(cls_only)}"] if cls_only else []) + \
-                  ([f"LLM: {', '.join(llm_only)}"] if llm_only else [])
-            if add:
-                note = "추가 — " + " / ".join(add)
-        if span:
-            note = (note + " " if note else "") + f"구간 {span}"
+        # **비고는 구간 표시만 남긴다.** 어느 판독기가 잡았는지는 검수자에게
+        # 쓸모가 없고(고칠 때 판단이 달라지지 않는다), "확인필요"는 모든 행에
+        # 붙다시피 해서 오히려 눈에 안 들어왔다. 결함항목이 비어 있으면 그 자체로
+        # 검수가 필요하다는 표시가 된다.
+        note = f"구간 {span}" if span else ""
 
         v_data["rows"].append({
             "time": t_sec,

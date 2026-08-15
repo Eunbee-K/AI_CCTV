@@ -10,13 +10,14 @@ from .state import state
 
 
 def mark_dist_conflicts(rows: List[dict]) -> None:
+    """같은 거리가 2번 이상 나온 행을 **그룹으로 묶을 수 있게 표시만** 한다.
+
+    예전에는 비고에 "확인필요"를 붙였는데, 거리 중복이 흔해서 거의 모든 행에
+    붙었고 그러면 아무것도 강조하지 못한다. 비고는 검수자가 직접 쓰는 칸으로
+    비워두고, 그룹 접기는 `dist_group` 플래그로 처리한다.
+
+    손으로 넣은 행은 제외한다 — 검수하려고 일부러 찍은 지점이다.
     """
-    같은 거리(dist)가 2번 이상 나온 경우,
-    그 거리의 모든 row.note 에 '확인필요'를 한 번만 붙인다.
-    (실제 rows는 삭제하지 않음)
-    """
-    # 손으로 넣은 행은 세지도, 표시하지도 않는다. 검수하려고 일부러 찍은
-    # 지점이라 "확인필요"가 붙으면 비고란이 지저분해지기만 한다.
     dist_counts = {}
     for r in rows:
         dist = (r.get("dist") or "").strip()
@@ -26,12 +27,8 @@ def mark_dist_conflicts(rows: List[dict]) -> None:
 
     for r in rows:
         dist = (r.get("dist") or "").strip()
-        if not dist or r.get("manual"):
-            continue
-        if dist_counts.get(dist, 0) > 1:
-            note = (r.get("note") or "").strip()
-            if "확인필요" not in note:
-                r["note"] = (note + " 확인필요").strip() if note else "확인필요"
+        r["dist_group"] = bool(
+            dist and not r.get("manual") and dist_counts.get(dist, 0) > 1)
 
 
 def _row_json(seq, row: dict, fname: str, v_data: dict) -> dict:

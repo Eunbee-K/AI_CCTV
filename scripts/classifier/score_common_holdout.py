@@ -3,13 +3,17 @@
 두 모델을 같은 사진으로 재는 것이 요점이다. 지금까지는 판이 서로 달라
 "필터 96% vs YOLO 36%"를 나란히 놓을 수 없었다(`build_common_holdout.py` 참고).
 
-재는 것 (결함코드마다)
-    CLS 탐지율     필터가 결함이라 판정했나 (정상 오탐 5% 지점 기준)
-    CLS 이름정확도  필터가 종류까지 맞혔나 (확신 0.9 이상일 때만 이름을 낸다)
-    DET 탐지율     YOLO가 뭐라도 검출했나 (이름이 틀려도 인정)
-    DET 이름정확도  YOLO가 종류까지 맞혔나
-    합집합         둘 중 하나라도 맞혔나  <- 상호보완의 증거
-    겹침           둘 다 맞혔나
+재는 것 (결함코드마다) — **탐지와 이름을 따로 본다**
+    CLS 탐지율      필터가 결함이라 판정했나 (정상 오탐 5% 지점 기준)
+    DET 탐지율      YOLO가 뭐라도 검출했나 (이름이 틀려도 인정)
+    탐지 합집합      둘 중 하나라도 탐지했나
+    CLS 이름정확도   필터가 종류까지 맞혔나 (확신 0.9 이상일 때만 이름을 낸다)
+    DET 이름정확도   YOLO가 종류까지 맞혔나
+    이름 합집합      둘 중 하나라도 종류를 맞혔나
+
+    검수자 입장에서 둘은 의미가 다르다. **이름이 틀린 것은 고르면 되지만,
+    아무도 탐지하지 못한 구간은 표에 아예 없어서 놓친 것이 된다.** 그래서
+    "구간을 얼마나 건지는가"(탐지)와 "이름까지 맞히는가"(이름)를 나눠 본다.
 
 **평균은 측정 가능한 종류에서만 낸다.** YOLO가 클래스를 갖고 있지 않은 종류
 (BC·DF·DG·LD)를 "0%"로 평균에 넣으면 성능이 아니라 커버리지를 성능처럼 재게 된다.
@@ -98,10 +102,16 @@ def main():
             s["cls_name"] += cls_name
             s["det_hit"] += det_hit
             s["det_name"] += det_name
+            # 이름 기준 합집합/겹침
             s["union"] += (cls_name or det_name)
             s["both"] += (cls_name and det_name)
             s["cls_only"] += (cls_name and not det_name)
             s["det_only"] += (det_name and not cls_name)
+            # **탐지 기준 합집합** — 이름이 틀려도 "뭔가 있다"고 봤으면 인정한다.
+            # 검수자 입장에서는 이름이 틀린 것과 구간 자체가 표에 없는 것이
+            # 전혀 다르다. 앞은 고르면 되고 뒤는 놓친 것이다.
+            s["hit_union"] += (cls_hit or det_hit)
+            s["hit_both"] += (cls_hit and det_hit)
             s["yolo_can"] = int(code in yolo_known)
         else:
             s["cls_fp"] += cls_hit
@@ -118,8 +128,8 @@ def main():
     print("=" * 86)
     print("결함별 — 필터C vs test3 (같은 사진, 두 모델 학습분 모두 제외)")
     print("=" * 86)
-    print(f"  {'코드':<6}{'장수':>5}{'CLS탐지':>9}{'CLS이름':>9}"
-          f"{'DET탐지':>9}{'DET이름':>9}{'합집합':>9}{'겹침':>7}  비고")
+    print(f"  {'코드':<6}{'장수':>5}{'CLS탐지':>9}{'DET탐지':>9}{'탐지합집합':>11}"
+          f"{'CLS이름':>9}{'DET이름':>9}{'이름합집합':>11}  비고")
     for group, label in ((both_known, "둘 다 아는 종류"),
                          (cls_only_codes, "필터C만 아는 종류 (YOLO에 클래스 없음)")):
         if not group:
@@ -129,9 +139,9 @@ def main():
             s = st[c]
             n = s["n"]
             note = "" if s["yolo_can"] else "YOLO 미학습"
-            print(f"  {c:<6}{n:>5}{pct(s['cls_hit'],n):>9}{pct(s['cls_name'],n):>9}"
-                  f"{pct(s['det_hit'],n):>9}{pct(s['det_name'],n):>9}"
-                  f"{pct(s['union'],n):>9}{pct(s['both'],n):>7}  {note}")
+            print(f"  {c:<6}{n:>5}{pct(s['cls_hit'],n):>9}{pct(s['det_hit'],n):>9}"
+                  f"{pct(s['hit_union'],n):>11}{pct(s['cls_name'],n):>9}"
+                  f"{pct(s['det_name'],n):>9}{pct(s['union'],n):>11}  {note}")
 
     def avg(codes, key):
         a = sum(st[c][key] for c in codes)
@@ -139,11 +149,13 @@ def main():
         return a, b
 
     print(f"\n  [둘 다 아는 {len(both_known)}종] — 공정 비교 구간")
-    for key, label in (("cls_hit", "CLS 탐지율"), ("cls_name", "CLS 이름정확도"),
-                       ("det_hit", "DET 탐지율"), ("det_name", "DET 이름정확도"),
-                       ("union", "합집합(둘 중 하나)"), ("both", "겹침(둘 다)")):
+    for key, label in (("cls_hit", "CLS 탐지율"), ("det_hit", "DET 탐지율"),
+                       ("hit_union", "탐지 합집합(둘 중 하나)"),
+                       ("hit_both", "탐지 겹침(둘 다)"),
+                       ("cls_name", "CLS 이름정확도"), ("det_name", "DET 이름정확도"),
+                       ("union", "이름 합집합(둘 중 하나)"), ("both", "이름 겹침(둘 다)")):
         a, b = avg(both_known, key)
-        print(f"    {label:<18}{a:>4}/{b:<5} {a/b:.1%}")
+        print(f"    {label:<22}{a:>4}/{b:<5} {a/b:.1%}")
     a_c, _ = avg(both_known, "cls_only")
     a_d, b = avg(both_known, "det_only")
     print(f"    {'CLS만 맞힘':<18}{a_c:>4}/{b:<5} {a_c/b:.1%}")
@@ -228,7 +240,7 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
 
     ws["A1"] = "결함별 성능 — 필터C(분류기) vs test3(YOLO)"
     ws["A1"].font = Font(bold=True, size=13)
-    ws.merge_cells("A1:H1")
+    ws.merge_cells("A1:I1")
 
     legend = [
         ("■ 초록", C_COMMON, "common_holdout — 두 모델 학습분을 모두 제외한 공통 검증셋. "
@@ -242,16 +254,17 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
         c = ws.cell(row=r, column=1, value=tag)
         c.fill = f; c.alignment = center; c.font = Font(size=9)
         ws.cell(row=r, column=2, value=desc).font = note_f
-        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=8)
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=9)
         r += 1
     ws.cell(row=r, column=1,
             value="※ 색이 다른 칸은 서로 다른 사진에서 잰 값이다 — 나란히 있어도 비교가 아니다."
             ).font = Font(italic=True, size=9, color="C00000")
-    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=9)
     hdr_row = r + 2
 
-    heads = ["결함코드", "장수", "CLS 탐지율", "CLS 이름정확도",
-             "DET 탐지율", "DET 이름정확도", "합집합", "비고"]
+    heads = ["결함코드", "장수",
+             "CLS 탐지율", "DET 탐지율", "탐지 합집합",
+             "CLS 이름정확도", "DET 이름정확도", "이름 합집합", "비고"]
     for i, h in enumerate(heads, 1):
         c = ws.cell(row=hdr_row, column=i, value=h)
         c.font = hdr; c.fill = fill; c.alignment = center
@@ -282,23 +295,25 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
             s = st[code]; n = s["n"]
             put(r, 1, code, font=bold, fill_=C_COMMON)
             put(r, 2, n, font=bold, fill_=C_COMMON)
-            for col, key in ((3, "cls_hit"), (4, "cls_name"),
-                             (5, "det_hit"), (6, "det_name"), (7, "union")):
+            for col, key in ((3, "cls_hit"), (4, "det_hit"), (5, "hit_union"),
+                             (6, "cls_name"), (7, "det_name"), (8, "union")):
                 put(r, col, s[key] / n, font=bold, fmt="0%", fill_=C_COMMON)
-            note = "" if s["yolo_can"] else "YOLO에 클래스 없음 → DET 0%는 구조적"
-            ws.cell(row=r, column=8, value=note).font = note_f
+            note = "" if s["yolo_can"] else "YOLO에 클래스 없음 → DET 이름 0%는 구조적"
+            ws.cell(row=r, column=9, value=note).font = note_f
         else:
             cls_v, cls_n, det_v, det_n, extra = REF.get(code, (None, 0, None, 0, "미측정"))
             put(r, 1, code)
             put(r, 2, "-")
-            # CLS 칸 — testset_bycode(노랑). DET 칸 — test3_holdout(주황).
+            # 탐지율은 참고치가 없다(기존 판에서 이름정확도만 기록했다).
             put(r, 3, "-", fill_=C_NONE)
-            put(r, 4, cls_v if cls_v is not None else "-",
-                font=f_ref, fmt="0%", fill_=(C_TESTSET if cls_v is not None else C_NONE))
+            put(r, 4, "-", fill_=C_NONE)
             put(r, 5, "-", fill_=C_NONE)
-            put(r, 6, det_v if det_v is not None else "-",
+            # 이름정확도 — CLS는 testset_bycode(노랑), DET는 test3_holdout(주황).
+            put(r, 6, cls_v if cls_v is not None else "-",
+                font=f_ref, fmt="0%", fill_=(C_TESTSET if cls_v is not None else C_NONE))
+            put(r, 7, det_v if det_v is not None else "-",
                 font=f_ref, fmt="0%", fill_=(C_YAJANG if det_v is not None else C_NONE))
-            put(r, 7, "-", fill_=C_NONE)                     # 합집합은 낼 수 없다
+            put(r, 8, "-", fill_=C_NONE)                     # 합집합은 낼 수 없다
             # 칸마다 출처가 다르므로 비고에 둘 다 적는다.
             parts = []
             if cls_v is not None:
@@ -307,7 +322,7 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
                 parts.append(f"DET: 야장 {det_n}장")
             if extra:
                 parts.append(extra)
-            ws.cell(row=r, column=8,
+            ws.cell(row=r, column=9,
                     value=" · ".join(parts) if parts else "측정 불가").font = note_f
         r += 1
 
@@ -319,11 +334,13 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
         r += 1
         ws.cell(row=r, column=1, value=title).font = bold
         r += 1
-        for key, label in (("cls_hit", "CLS 탐지율"), ("cls_name", "CLS 이름정확도"),
-                           ("det_hit", "DET 탐지율"), ("det_name", "DET 이름정확도"),
-                           ("union", "합집합(둘 중 하나라도 맞힘)"),
-                           ("both", "겹침(둘 다 맞힘)"),
-                           ("cls_only", "CLS만 맞힘"), ("det_only", "DET만 맞힘")):
+        for key, label in (("cls_hit", "CLS 탐지율"), ("det_hit", "DET 탐지율"),
+                           ("hit_union", "탐지 합집합(둘 중 하나라도 탐지)"),
+                           ("hit_both", "탐지 겹침(둘 다 탐지)"),
+                           ("cls_name", "CLS 이름정확도"), ("det_name", "DET 이름정확도"),
+                           ("union", "이름 합집합(둘 중 하나라도 맞힘)"),
+                           ("both", "이름 겹침(둘 다 맞힘)"),
+                           ("cls_only", "이름 CLS만 맞힘"), ("det_only", "이름 DET만 맞힘")):
             a = sum(st[c][key] for c in codes)
             b = sum(st[c]["n"] for c in codes)
             ws.cell(row=r, column=1, value=label)
@@ -333,7 +350,7 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
     block(sorted(measured), f"[측정한 {len(measured)}종 전체 평균] — 이 판의 대표값")
     block(both_known, f"[둘 다 아는 {len(both_known)}종만] — 같은 종류 맞대결")
 
-    for i, w in enumerate([11, 7, 12, 15, 12, 15, 10, 42], 1):
+    for i, w in enumerate([11, 7, 12, 12, 13, 15, 15, 13, 42], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = f"A{hdr_row + 1}"
 

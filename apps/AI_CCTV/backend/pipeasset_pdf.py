@@ -32,7 +32,11 @@ PAGE_W, PAGE_H = 595.0, 842.0
 MARGIN_X = 36.0
 TITLE_Y = 46.0
 TABLE_TOP = 78.0
-ROW_H = 15.0                      # 메타데이터 표 한 줄 높이
+# 실물 야장(2.3b CCTV조사 야장_상면.pdf) 실측: 본문 9.0pt · 꼬리말 8.0pt.
+# 예전에는 7.5pt라 인쇄물보다 확연히 작았다.
+BODY_SIZE = 9.0                   # 표·캡션 본문
+SMALL_SIZE = 8.0                  # 꼬리말
+ROW_H = 17.0                      # 메타데이터 표 한 줄 높이(9pt에 맞춰 키움)
 PHOTOS_PER_PAGE = 6
 PHOTO_COLS = 2
 
@@ -40,7 +44,7 @@ RAIL_X = 78.0                     # 관로 모식도 세로선 x
 PHOTO_LEFT = 150.0                # 사진 영역 시작 x
 PHOTO_GAP_X = 12.0
 PHOTO_GAP_Y = 40.0                # 캡션 자리를 포함한 세로 간격
-CAPTION_H = 14.0
+CAPTION_H = 18.0                  # 캡션 한 줄(9pt) + 위아래 여백
 
 LINE = (0.0, 0.0, 0.0)
 GRAY_FILL = (0.85, 0.85, 0.85)
@@ -78,8 +82,12 @@ class _Pen:
         page.insert_font(fontname="KR", fontfile=self.font_path)
         return page
 
-    def text(self, page, x, y, s, size=7.5, color=LINE, align="left", width=None):
-        """y는 글자 baseline이 아니라 '박스 세로 중앙'으로 다룬다(표 셀에 맞추기 쉽게)."""
+    def text(self, page, x, y, s, size=BODY_SIZE, color=LINE, align="left", width=None):
+        """y는 baseline이 아니라 **글자 상자의 세로 중앙**이다(표 셀에 맞추기 쉽게).
+
+        중앙에 놓으려면 baseline을 중앙에서 아래로 내려야 한다. 한글 폰트의
+        시각적 중심은 대략 `size * 0.35` 아래라, 그만큼만 더한다.
+        """
         s = str(s or "")
         if not s:
             return
@@ -88,14 +96,18 @@ class _Pen:
             x = x + (width - tw) / 2
         elif align == "right" and width:
             x = x + width - tw - 2
-        page.insert_text((x, y + size * 0.36), s, fontname="KR", fontsize=size, color=color)
+        page.insert_text((x, y + size * 0.35), s, fontname="KR", fontsize=size, color=color)
 
-    def cell(self, page, x, y, w, h, s="", size=7.5, fill=None, align="center", color=LINE):
+    def cell(self, page, x, y, w, h, s="", size=BODY_SIZE, fill=None, align="center",
+             color=LINE):
         rect = fitz.Rect(x, y, x + w, y + h)
         page.draw_rect(rect, color=LINE, fill=fill, width=0.5)
         if s:
             pad = 3 if align == "left" else 0
-            self.text(page, x + pad, y + h / 2 - size * 0.5, s, size=size,
+            # **셀 세로 중앙에 그대로 넘긴다.** 예전에는 여기서 size*0.5를 빼고
+            # text()가 다시 size*0.36을 더해, 결과적으로 중앙보다 위로 떠서
+            # 글씨가 셀 위쪽에 붙어 보였다.
+            self.text(page, x + pad, y + h / 2, s, size=size,
                       color=color, align=align, width=w - pad * 2)
         return rect
 
@@ -113,7 +125,7 @@ def _draw_meta_table(pen: _Pen, page, pipe_id: str, dia: str, m: dict,
     y = TABLE_TOP
 
     def L(w):   # 라벨 셀(회색)
-        return dict(fill=GRAY_FILL, size=7.5)
+        return dict(fill=GRAY_FILL, size=BODY_SIZE)
 
     # 1행: 사업명 | 값 | 보고서번호 | 값
     pen.cell(page, x0, y, W * .11, ROW_H, "사업명", **L(0))
@@ -191,7 +203,7 @@ def _draw_meta_table(pen: _Pen, page, pipe_id: str, dia: str, m: dict,
     coord = f"위도:{lat or '미측정'}/경도:{lon or '미측정'}"
     for left_lbl, right_lbl in (("상류맨홀좌표", "하류맨홀좌표"),):
         pen.cell(page, x0, y, W * .16, ROW_H, left_lbl, **L(0))
-        pen.cell(page, x0 + W * .16, y, W * .34, ROW_H, coord, align="left", size=7)
+        pen.cell(page, x0 + W * .16, y, W * .34, ROW_H, coord, align="left", size=BODY_SIZE)
         pen.cell(page, x0 + W * .50, y, W * .16, ROW_H, right_lbl, **L(0))
         pen.cell(page, x0 + W * .66, y, W * .34, ROW_H, coord, align="left", size=7)
         y += ROW_H
@@ -217,7 +229,7 @@ def _draw_meta_table(pen: _Pen, page, pipe_id: str, dia: str, m: dict,
     note = m.get("미주행사유", "") or (f"완주 {m.get('주행방향', '')}".strip()
                                        if m.get("주행방향") else "")
     for d in ("상류->하류", "하류->상류"):
-        pen.cell(page, x0, y, W * .12, ROW_H, d, size=7)
+        pen.cell(page, x0, y, W * .12, ROW_H, d, size=BODY_SIZE)
         pen.cell(page, x0 + W * .12, y, W * .13, ROW_H, "")
         pen.cell(page, x0 + W * .25, y, W * .25, ROW_H, "")
         pen.cell(page, x0 + W * .50, y, W * .50, ROW_H,
@@ -247,8 +259,8 @@ def _draw_pipe_rail(pen: _Pen, page, top: float, bottom: float,
 
     if total_text:
         cy = (top + bottom) / 2
-        pen.text(page, MARGIN_X - 2, cy - 9, "전체거리:", size=7, color=BLUE)
-        pen.text(page, MARGIN_X - 2, cy + 1, total_text, size=7, color=BLUE)
+        pen.text(page, MARGIN_X - 2, cy - 9, "전체거리:", size=BODY_SIZE, color=BLUE)
+        pen.text(page, MARGIN_X - 2, cy + 1, total_text, size=BODY_SIZE, color=BLUE)
 
     if not anchors:
         return
@@ -273,7 +285,7 @@ def _draw_pipe_rail(pen: _Pen, page, top: float, bottom: float,
         page.draw_circle(hub, 2.6, color=LINE, width=0.5)
         page.draw_rect(fitz.Rect(px - 5, py - 2, px - 1, py + 2), color=None, fill=ORANGE)
         if dist_txt:
-            pen.text(page, RAIL_X + 29, my - 4, dist_txt, size=6.8, color=BLUE)
+            pen.text(page, RAIL_X + 29, my - 4, dist_txt, size=BODY_SIZE - 0.5, color=BLUE)
 
 
 # ───────── 사진 격자 ─────────
@@ -304,10 +316,10 @@ def _draw_photos(pen: _Pen, page, chunk: List[dict], top: float, bottom: float) 
                 page.draw_rect(rect, color=LINE, width=0.5)
         else:
             page.draw_rect(rect, color=LINE, fill=(0.93, 0.93, 0.93), width=0.5)
-            pen.text(page, x, y + img_h / 2, "(이미지 없음)", size=7,
+            pen.text(page, x, y + img_h / 2, "(이미지 없음)", size=BODY_SIZE,
                      align="center", width=cell_w, color=(0.5, 0.5, 0.5))
 
-        pen.text(page, x, y + img_h + 3, row["_caption"], size=7,
+        pen.text(page, x, y + img_h + CAPTION_H / 2, row["_caption"], size=BODY_SIZE,
                  align="center", width=cell_w, color=BLUE)
 
         # 오른쪽 열은 선이 왼쪽 사진을 가로지르지 않도록 행 사이 여백으로 우회시킨다.
@@ -390,9 +402,9 @@ def export_pipeasset_pdf(path: str, only_video: Optional[str] = None) -> Optiona
             _draw_pipe_rail(pen, page, body_top, body_bottom, marks, m.get("연장", ""))
 
             pen.text(page, MARGIN_X, PAGE_H - 34,
-                     f"보고서번호:{m.get('보고서번호', '')} / 관로번호:{pipe_id} - ({page_no})", size=7.5)
+                     f"보고서번호:{m.get('보고서번호', '')} / 관로번호:{pipe_id} - ({page_no})", size=SMALL_SIZE)
             pen.text(page, PAGE_W - MARGIN_X - 150, PAGE_H - 34, m.get("조사자", ""),
-                     size=7.5, align="right", width=150)
+                     size=SMALL_SIZE, align="right", width=150)
 
     if doc.page_count == 0:
         doc.close()
