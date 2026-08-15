@@ -2,13 +2,15 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 
-from . import defect_filter, llm_infer, session_store, ws_manager
+from . import (defect_classifier, defect_filter, llm_infer, session_store,
+               ws_manager)
 from .annotate import annotate_frame
-from .config import (FILTER_MAX_MISS_ROWS, FILTER_MODE, FILTER_THRESHOLD,
+from .config import (CLASSIFIER_ENABLED,
+                     FILTER_MAX_MISS_ROWS, FILTER_MODE, FILTER_THRESHOLD,
                      OUTSIDE_DIST_M, OUTSIDE_SCAN_MAX,
                      FILTER_TOP_RATIO,
                      FRAME_INTERVAL)
@@ -235,9 +237,34 @@ def _run_llm(frames) -> Dict[int, List[str]]:
     return by_time
 
 
+def _run_classifier(frames) -> Dict[int, Tuple[str, float]]:
+    """다중 클래스 분류기로 이름을 붙인다. 모델이 없으면 빈 dict.
+
+    LLM과 달리 회사망에서도 돌고 키도 필요 없으므로 기본으로 켜져 있다.
+    """
+    if not CLASSIFIER_ENABLED:
+        return {}
+    ok, why = defect_classifier.availability()
+    if not ok:
+        ws_manager.log(f" - 분류기: {why}")
+        return {}
+
+    t0 = time.time()
+    by_path = defect_classifier.classify(frames)
+    out: Dict[int, Tuple[str, float]] = {}
+    for fp, (code, conf) in by_path.items():
+        out[_frame_sec(fp)] = (code, conf)
+    ws_manager.log(
+        f" - 분류기: {len(out)}/{len(frames)}개 프레임에 이름 "
+        f"({time.time() - t0:.0f}s)"
+    )
+    return out
+
+
 def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
                      merged_rows: List[dict], path,
-                     llm_by_time: Optional[Dict[int, List[str]]] = None) -> None:
+                     llm_by_time: Optional[Dict[int, List[str]]] = None,
+                     cls_by_time: Optional[Dict[int, Tuple[str, float]]] = None) -> None:
     """**필터가 잡은 구간이 곧 결함 리스트.** YOLO는 이름만 붙인다.
 
     행을 만드는 주체가 뒤바뀐 것이 핵심이다. 지금까지는 YOLO가 박스를 친 프레임만
@@ -259,6 +286,7 @@ def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
     # YOLO 검출을 시각으로 찾을 수 있게 해둔다
     yolo_at = {int(item.get("time_s", 0)): item for item in merged_rows}
     llm_by_time = llm_by_time or {}
+    cls_by_time = cls_by_time or {}
     used: set = set()
     llm_used: set = set()
 
@@ -308,20 +336,35 @@ def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
             if t in llm_by_time:
                 llm_used.add(t)
 
+        # 분류기가 이 구간에서 본 이름. 구간 전체를 훑어 가장 확신한 것을 고른다.
+        cls_names: List[str] = []
+        if cls_by_time:
+            cand = [cls_by_time[t] for t in secs if t in cls_by_time]
+            if cand:
+                cls_names = [max(cand, key=lambda kv: kv[1])[0]]
+
         yolo_names = list(item.get("defects", []))
-        # YOLO가 이름을 못 붙였으면 LLM 것을 그대로 쓴다. 붙였으면 YOLO를 앞에 두고
-        # LLM이 추가로 본 것만 뒤에 붙인다 — 박스가 있는 쪽이 근거가 분명하다.
-        defects = yolo_names + [c for c in llm_names if c not in yolo_names]
-        llm_only = [c for c in llm_names if c not in yolo_names]
+        # YOLO가 이름을 못 붙였으면 다른 판독자 것을 그대로 쓴다. 붙였으면 YOLO를
+        # 앞에 두고 나머지가 추가로 본 것만 뒤에 붙인다 — 박스가 있는 쪽이 근거가
+        # 분명하다. 분류기를 LLM보다 앞에 두는 것은 회사망에서도 늘 돌기 때문이다.
+        extra = [c for c in cls_names + llm_names if c not in yolo_names]
+        seen: set = set()
+        extra = [c for c in extra if not (c in seen or seen.add(c))]
+        defects = yolo_names + extra
+        cls_only = [c for c in cls_names if c not in yolo_names]
+        llm_only = [c for c in llm_names if c not in yolo_names and c not in cls_names]
 
         note = ""
         if not defects:
             # 아무도 이름을 못 붙인 구간. 결함항목은 검수자가 고른다.
             note = "확인필요(이름 미부여)"
         elif not yolo_names:
-            note = "LLM 판독"
-        elif llm_only:
-            note = f"LLM 추가: {', '.join(llm_only)}"
+            note = "분류기 판독" if cls_only else "LLM 판독"
+        else:
+            add = ([f"분류기: {', '.join(cls_only)}"] if cls_only else []) + \
+                  ([f"LLM: {', '.join(llm_only)}"] if llm_only else [])
+            if add:
+                note = "추가 — " + " / ".join(add)
         if span:
             note = (note + " " if note else "") + f"구간 {span}"
 
@@ -345,11 +388,12 @@ def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
 
     rows = v_data["rows"]
     by_yolo = sum(1 for r in rows if r["boxes"])
-    by_llm = sum(1 for r in rows if r["defects"] and not r["boxes"])
+    # 박스가 없는데 이름이 있으면 분류기나 LLM이 붙인 것이다
+    by_other = sum(1 for r in rows if r["defects"] and not r["boxes"])
     ws_manager.log(
         f" - Filter(lead): {len(runs)} defect runs → {len(rows)} rows "
-        f"({by_yolo} named by YOLO, {by_llm} by LLM only, "
-        f"{len(rows) - by_yolo - by_llm} need review)"
+        f"({by_yolo} named by YOLO, {by_other} by 분류기/LLM only, "
+        f"{len(rows) - by_yolo - by_other} need review)"
     )
 
     # 필터가 안 고른 곳에서 YOLO/LLM이 찾은 것. 표에는 넣지 않지만 조용히 사라지면
@@ -500,9 +544,11 @@ def _run_batch_thread():
             # lead: 필터가 고른 구간이 행이 되고, YOLO 검출은 거기에 이름으로 얹힌다.
             # 그 외 모드: YOLO가 박스를 친 프레임이 행이 된다(기존 방식).
             if probs and FILTER_MODE == "lead":
+                cls_by_time = _run_classifier(frames)
                 ws_manager.progress(path.name, idx + 1, total, "llm")
                 llm_by_time = _run_llm(frames)
-                _build_lead_rows(v_data, frames, probs, merged_rows, path, llm_by_time)
+                _build_lead_rows(v_data, frames, probs, merged_rows, path,
+                                 llm_by_time, cls_by_time)
                 merged_rows = []
 
             for item in merged_rows:

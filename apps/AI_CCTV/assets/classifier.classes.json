@@ -1,0 +1,32 @@
+{
+  "classes": [
+    "BC",
+    "BK",
+    "CC",
+    "CL",
+    "CM",
+    "DE",
+    "DF",
+    "DG",
+    "DS",
+    "ETC",
+    "HL",
+    "IF",
+    "JD",
+    "JF",
+    "JS",
+    "LD",
+    "LP",
+    "LS",
+    "PO",
+    "RT",
+    "SD",
+    "SG",
+    "TO",
+    "normal"
+  ],
+  "img": 384,
+  "gray": false,
+  "arch": "effb0",
+  "src": "E:/AI_CCTV_RESULTS/filter/runs/C_eff_mc-20260815T033304Z-1-001/C_eff_mc/best_acc.pt"
+}

@@ -132,6 +132,26 @@ OUTSIDE_DIST_M = float(os.getenv("OUTSIDE_DIST_M", "0.5"))
 # 프레임당 OCR이 1~2초라 무한정 훑으면 느려진다.
 OUTSIDE_SCAN_MAX = int(os.getenv("OUTSIDE_SCAN_MAX", "120"))
 
+# ───────── 다중 클래스 분류기 (YOLO와 나란히 이름을 붙인다) ─────────
+# bbox 없이 결함 종류만 맞히는 모델. 테스트셋(23종 455장) 이름 정확도 69.7%로
+# YOLO 검출의 45%보다 높다. 대신 위치를 모르므로 박스는 YOLO만 만든다.
+# 둘을 바꾸지 않고 나란히 두는 것은 서로 다른 것을 놓치기 때문이다
+# (HL 분류기 65% vs YOLO-cls 15% / JS는 둘 다 0%).
+CLASSIFIER_ENABLED = os.getenv("CLASSIFIER_ENABLED", "1").strip() in ("1", "true", "on")
+CLASSIFIER_MODEL_PATH = Path(
+    os.getenv("CLASSIFIER_MODEL_PATH", str(resource_path("assets/classifier.onnx")))
+)
+CLASSIFIER_BATCH_SIZE = int(os.getenv("CLASSIFIER_BATCH_SIZE", "16"))
+# 이 확률 미만이면 이름을 안 붙인다. 근거 없는 이름은 검수자에게 방해다.
+# 테스트셋 455장 실측 — 이 모델은 확신이 강해서 0.5로는 거의 안 걸러진다:
+#   0.5  이름 378 · 정밀도 80% · 정상 오탐 7장
+#   0.7  이름 323 · 정밀도 84% · 정상 오탐 2장
+#   0.9  이름 230 · 정밀도 95% · 정상 오탐 0장   ← 기본
+# 이름을 다 붙이는 게 목적이 아니라 **검수자가 믿을 수 있는 이름**을 붙이는 게
+# 목적이다. 틀린 이름은 이름이 없는 것보다 나쁘다 — 검수자가 그걸 지우는 일이
+# 늘어난다. 못 붙인 구간은 "확인필요"로 남아 어차피 사람이 본다.
+CLASSIFIER_MIN_CONF = float(os.getenv("CLASSIFIER_MIN_CONF", "0.90"))
+
 # ───────── LLM 판독 (세 번째 의견) ─────────
 # 필터가 고른 구간에 YOLO와 나란히 이름을 붙이는 두 번째 판독자.
 # ver_2.2 앱에서 쓰던 Gemini+GPT 구조를 옮겨왔다(backend/llm_infer.py).
