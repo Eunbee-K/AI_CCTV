@@ -180,14 +180,30 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
 
     # 이 판으로 못 재는 19종 — 기존 판의 값(비교 아님, 각자의 값)
     # 필터C는 testset_bycode(23종×20장), test3는 test3_holdout(야장 80%) 기준.
-    REF = {  # code: (CLS 이름정확도, DET 재현율, 비고)
-        "CM": (0.60, 0.00, "야장 20장"), "HL": (0.50, 0.00, "야장 3장"),
-        "JS": (0.00, 0.00, "야장 20장"), "LS": (0.45, 0.30, "야장 20장"),
-        "PO": (0.30, 0.00, "야장 20장"), "RT": (0.65, 0.00, "야장 19장"),
-        "SG": (0.95, 0.00, "야장 10장"), "TO": (0.75, 0.80, "야장 20장"),
-        "DE": (0.93, None, "YOLO 미학습"), "IF": (1.00, None, "YOLO 미학습"),
-        "CX": (None, None, "데이터 없음"), "NS": (None, None, "데이터 없음"),
-        "PB": (None, None, "데이터 없음"), "ETC": (0.00, None, "기타(결함 종류 아님)"),
+    # 이 판으로 못 잰 19종의 참고치.
+    #
+    # **CLS와 DET 값의 출처가 서로 다르다 — 나란히 놓여 있어도 비교가 아니다.**
+    #   CLS = testset_bycode  (S20/AIHub 도메인, 종류당 20장) — 필터C 이름정확도
+    #   DET = test3_holdout   (야장 80% 도메인, 장수는 코드마다 다름) — test3 재현율
+    # 도메인이 다르면 같은 모델도 3배까지 값이 벌어진다(보고서 §3.4). 그래서
+    # 칸마다 출처를 색으로 구분하고 비고에도 적는다.
+    #
+    # code: (CLS 값, CLS 표본, DET 값, DET 표본, 특이사항)
+    REF = {
+        "CM": (0.60, 20, 0.00, 20, ""),
+        "HL": (0.50, 20, 0.00, 3, "DET 표본 3장뿐"),
+        "JS": (0.00, 20, 0.00, 20, ""),
+        "LS": (0.45, 20, 0.30, 20, ""),
+        "PO": (0.30, 20, 0.00, 20, ""),
+        "RT": (0.65, 20, 0.00, 19, ""),
+        "SG": (0.95, 20, 0.00, 10, "DET 표본 10장"),
+        "TO": (0.75, 20, 0.80, 20, ""),
+        "DE": (0.93, 15, None, 0, "YOLO 미학습"),
+        "IF": (1.00, 20, None, 0, "YOLO 미학습"),
+        "ETC": (0.00, 20, None, 0, "기타(결함 종류 아님)"),
+        "CX": (None, 0, None, 0, "양쪽 데이터 없음"),
+        "NS": (None, 0, None, 0, "양쪽 데이터 없음"),
+        "PB": (None, 0, None, 0, "양쪽 데이터 없음"),
     }
     ALL31 = ["CC", "CL", "CM", "SD", "BC", "LD", "DF", "BK", "CX", "PO", "HL",
              "LP", "LS", "JS", "JF", "JD", "NS", "SG", "DE", "DS", "DG", "TO",
@@ -199,26 +215,49 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
     bold = Font(bold=True)
     hdr = Font(bold=True, color="FFFFFF")
     fill = PatternFill("solid", fgColor="4472C4")
-    grey = Font(color="999999")
     note_f = Font(italic=True, size=9, color="666666")
     center = Alignment(horizontal="center", vertical="center")
+
+    # **검증셋마다 색을 달리한다.** 값이 어느 판에서 나왔는지가 해석을 좌우하기
+    # 때문이다 — 도메인이 다르면 같은 모델도 3배까지 벌어진다(보고서 §3.4).
+    C_COMMON = PatternFill("solid", fgColor="E2EFDA")   # 초록 — 공통 검증셋(비교 가능)
+    C_TESTSET = PatternFill("solid", fgColor="FFF2CC")  # 노랑 — testset_bycode
+    C_YAJANG = PatternFill("solid", fgColor="FCE4D6")   # 주황 — test3_holdout(야장)
+    C_NONE = PatternFill("solid", fgColor="F2F2F2")     # 회색 — 측정 불가
+    f_ref = Font(color="595959")
 
     ws["A1"] = "결함별 성능 — 필터C(분류기) vs test3(YOLO)"
     ws["A1"].font = Font(bold=True, size=13)
     ws.merge_cells("A1:H1")
-    ws["A2"] = ("굵은 글씨 = 공통 검증셋(common_holdout, 두 모델 학습분 모두 제외)으로 "
-                "직접 비교한 12종 · 회색 = 이 판으로 측정 불가, 기존 판 참고치")
-    ws["A2"].font = note_f
-    ws.merge_cells("A2:H2")
+
+    legend = [
+        ("■ 초록", C_COMMON, "common_holdout — 두 모델 학습분을 모두 제외한 공통 검증셋. "
+                             "이 색끼리만 직접 비교할 수 있다 (결함 12종 × 30장)"),
+        ("■ 노랑", C_TESTSET, "testset_bycode — S20/AIHub 도메인, 종류당 20장. 필터C 참고치"),
+        ("■ 주황", C_YAJANG, "test3_holdout — 야장(실제 조사영상) 80%. test3 참고치"),
+        ("■ 회색", C_NONE, "측정 불가 — 두 모델이 원본을 전량 학습에 써서 검증할 사진이 없음"),
+    ]
+    r = 2
+    for tag, f, desc in legend:
+        c = ws.cell(row=r, column=1, value=tag)
+        c.fill = f; c.alignment = center; c.font = Font(size=9)
+        ws.cell(row=r, column=2, value=desc).font = note_f
+        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=8)
+        r += 1
+    ws.cell(row=r, column=1,
+            value="※ 색이 다른 칸은 서로 다른 사진에서 잰 값이다 — 나란히 있어도 비교가 아니다."
+            ).font = Font(italic=True, size=9, color="C00000")
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
+    hdr_row = r + 2
 
     heads = ["결함코드", "장수", "CLS 탐지율", "CLS 이름정확도",
              "DET 탐지율", "DET 이름정확도", "합집합", "비고"]
     for i, h in enumerate(heads, 1):
-        c = ws.cell(row=4, column=i, value=h)
+        c = ws.cell(row=hdr_row, column=i, value=h)
         c.font = hdr; c.fill = fill; c.alignment = center
 
-    def put(row, col, value, *, font=None, fmt=None):
-        """숫자 서식을 확실히 건다.
+    def put(row, col, value, *, font=None, fmt=None, fill_=None):
+        """숫자 서식과 배경색을 함께 건다.
 
         30/30 같은 값이 int 1로 저장되면 도구에 따라 '1'로 읽힌다(엑셀 자체는
         0% 서식이라 100%로 보이지만, 다른 프로그램에서 열면 다르다). 비율 칸은
@@ -230,31 +269,46 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
         c.alignment = center
         if font:
             c.font = font
+        if fill_:
+            c.fill = fill_
         if fmt and isinstance(value, (int, float)):
             c.number_format = fmt
         return c
 
-    r = 5
+    r = hdr_row + 1
     measured = set(both_known) | set(cls_only_codes)
     for code in ALL31:
-        put(r, 1, code, font=(bold if code in measured else None))
         if code in measured:
             s = st[code]; n = s["n"]
-            put(r, 2, n, font=bold)
+            put(r, 1, code, font=bold, fill_=C_COMMON)
+            put(r, 2, n, font=bold, fill_=C_COMMON)
             for col, key in ((3, "cls_hit"), (4, "cls_name"),
                              (5, "det_hit"), (6, "det_name"), (7, "union")):
-                put(r, col, s[key] / n, font=bold, fmt="0%")
-            note = "" if s["yolo_can"] else "YOLO 미학습(구조적 0%)"
+                put(r, col, s[key] / n, font=bold, fmt="0%", fill_=C_COMMON)
+            note = "" if s["yolo_can"] else "YOLO에 클래스 없음 → DET 0%는 구조적"
             ws.cell(row=r, column=8, value=note).font = note_f
         else:
-            cls_v, det_v, note = REF.get(code, (None, None, "미측정"))
+            cls_v, cls_n, det_v, det_n, extra = REF.get(code, (None, 0, None, 0, "미측정"))
+            put(r, 1, code)
             put(r, 2, "-")
-            put(r, 3, "-")                                   # CLS 탐지율(미측정)
-            put(r, 4, cls_v if cls_v is not None else "-", font=grey, fmt="0%")
-            put(r, 5, "-")                                   # DET 탐지율(미측정)
-            put(r, 6, det_v if det_v is not None else "-", font=grey, fmt="0%")
-            put(r, 7, "-")                                   # 합집합(미측정)
-            ws.cell(row=r, column=8, value=f"참고치 · {note}").font = note_f
+            # CLS 칸 — testset_bycode(노랑). DET 칸 — test3_holdout(주황).
+            put(r, 3, "-", fill_=C_NONE)
+            put(r, 4, cls_v if cls_v is not None else "-",
+                font=f_ref, fmt="0%", fill_=(C_TESTSET if cls_v is not None else C_NONE))
+            put(r, 5, "-", fill_=C_NONE)
+            put(r, 6, det_v if det_v is not None else "-",
+                font=f_ref, fmt="0%", fill_=(C_YAJANG if det_v is not None else C_NONE))
+            put(r, 7, "-", fill_=C_NONE)                     # 합집합은 낼 수 없다
+            # 칸마다 출처가 다르므로 비고에 둘 다 적는다.
+            parts = []
+            if cls_v is not None:
+                parts.append(f"CLS: testset_bycode {cls_n}장")
+            if det_v is not None:
+                parts.append(f"DET: 야장 {det_n}장")
+            if extra:
+                parts.append(extra)
+            ws.cell(row=r, column=8,
+                    value=" · ".join(parts) if parts else "측정 불가").font = note_f
         r += 1
 
     # ── 평균 ──────────────────────────────────────────────
@@ -279,9 +333,9 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
     block(sorted(measured), f"[측정한 {len(measured)}종 전체 평균] — 이 판의 대표값")
     block(both_known, f"[둘 다 아는 {len(both_known)}종만] — 같은 종류 맞대결")
 
-    for i, w in enumerate([11, 7, 12, 15, 12, 15, 10, 26], 1):
+    for i, w in enumerate([11, 7, 12, 15, 12, 15, 10, 42], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
-    ws.freeze_panes = "A5"
+    ws.freeze_panes = f"A{hdr_row + 1}"
 
     out = Path(__file__).resolve().parents[2] / "docs" / "reports" / \
         "2026-08-16-결함별-성능비교.xlsx"
