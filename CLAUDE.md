@@ -33,11 +33,13 @@
 **`docs/PRD.md`를 반드시 먼저 읽을 것** — 여기 요약은 최소한만 남깁니다.
 
 핵심 요약:
-- **현재 배포된 모델(YOLO)은 없다.** v1~v5는 전부 실험 단계이고 `apps/AI_CCTV/assets/best.pt`도
-  이 저장소에 없다(`.gitignore`의 `*.pt`). 최종 모델은 v6에서 구성한다 — **2026-08-10
-  예정이었으나 지연 중**. 실험 경과는 `docs/reports/2026-08-04-모델학습-실험정리.md` 참고.
-  최고 성적은 v5 18종 bbox mAP50 0.703이고, **클래스를 늘릴수록 mAP가 떨어진다**
-  (2종 0.821 → 5종 0.759 → 18종 0.703).
+- **2026-08-15, 모델 개발 마감 — 필터(분류기 C) + YOLO(test3) 병렬 구조로 확정.**
+  `apps/AI_CCTV/assets/classifier.onnx`(필터+1차 이름) + `best.pt`(test3, 검출+2차
+  이름)가 배포본. 상세 성능·모집단·기준은
+  `docs/reports/2026-08-15-필터C-test3-병렬-확정.md` 반드시 참고 — 결함코드별
+  실측 표가 다 있다. **YOLO 성능은 반드시 야장 기준으로만 인용할 것** — S20/AIHub
+  판(testset_bycode)은 학습 유출 의심이 있어 test5에서 90%→33%로 착시가 났었다.
+  이 세션 이후 신규 모델 학습은 진행하지 않는다. 다음은 실영상 베타테스트.
 - 목표는 18종 탐지(`configs/sweeps/test3_18class.yaml`) / 8종 세그멘테이션
   (`configs/sweeps/test4_seg.yaml`) / 31종 마스터 결함 코드 체계(`docs/메타데이터(총괄).xlsx`).
 - **Stage-1 필터는 학습 완료 상태**(EfficientNet-B0, 브랜치 `feat/stage1-classifier`)지만
