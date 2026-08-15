@@ -89,21 +89,41 @@ def _update_travel_distance(video_name: str) -> None:
     ws_manager.log(f" - 총주행거리/연장 = {text} (미주행 0.0m)")
 
 
-def _run_filter(frames, video_name: str) -> Dict[str, float]:
-    """프레임별 결함 확률. 필터가 꺼져 있거나 쓸 수 없으면 빈 dict."""
-    if FILTER_MODE == "off" or not frames:
-        return {}
+def _run_filter(frames, video_name: str) -> Tuple[Dict[str, float],
+                                                  Dict[str, Tuple[str, float]]]:
+    """프레임별 결함 확률과 이름. 쓸 수 없으면 빈 dict 둘.
 
-    # 이 필터는 노후관로(우수관) 조사 야장으로만 학습했다. 한동안 신설관로에서는
-    # 건너뛰게 해뒀는데, 전용 모델(NEW_v1)이 AUC 0.75로 미달이라 보류된 사이
-    # 신설관로에는 아무 보조 장치도 없는 상태가 됐다. parallel은 프레임을 버리지
-    # 않고 표시만 남기므로, 오판하더라도 결과가 사라지지 않는다. 그래서 관로구분과
-    # 무관하게 돌린다 — 신설에서 얼마나 맞는지는 눈으로 확인하며 판단한다.
+    **분류기 하나가 필터와 이름을 겸한다.** 24클래스 중 정상 계열이 아닐 확률이
+    곧 결함 확률이다. 테스트셋에서 이진 전용 모델과 같은 성적이 나왔고
+    (AUC 0.9906 vs 0.9920, 잡음 ±0.008 안), 관 밖 오탐이 39% -> 0%로 사라졌다.
+
+    분류기가 없으면 옛 이진 필터(filter.onnx)로 물러선다 — 모델 파일을 아직
+    안 옮긴 PC에서도 분석이 멈추지 않아야 한다.
+    """
+    if FILTER_MODE == "off" or not frames:
+        return {}, {}
+
+    # 이 모델은 노후관로(우수관) 자료가 중심이다. 신설 전용 모델(NEW_v1)이
+    # AUC 0.75로 미달이라 보류된 사이 신설에 아무 보조 장치가 없던 적이 있어,
+    # 지금은 관로구분과 무관하게 돌린다 — 얼마나 맞는지는 눈으로 확인한다.
+    if CLASSIFIER_ENABLED:
+        ok, why = defect_classifier.availability()
+        if ok:
+            t0 = time.time()
+            probs, names = defect_classifier.analyze(frames)
+            ws_manager.log(
+                f" - 분류기({FILTER_MODE}): {len(probs)}/{len(frames)}프레임 채점 · "
+                f"이름 {len(names)}개 (상위 {FILTER_TOP_RATIO:.0%} 통과, "
+                f"{time.time() - t0:.1f}s)"
+            )
+            return probs, names
+        ws_manager.log(f" - 분류기를 못 씀({why}) — 옛 이진 필터로 돌아감", "WARN")
+
     ok, why = defect_filter.availability()
     if not ok:
         # 필터는 보조 장치다. 없다고 분석을 멈추지 않고 알리기만 한다.
         ws_manager.log(f" - Filter unavailable, skipping: {why}", "WARN")
-        return {}
+        return {}, {}
 
     t0 = time.time()
     probs = defect_filter.defect_probs(frames)
@@ -118,7 +138,7 @@ def _run_filter(frames, video_name: str) -> Dict[str, float]:
         f" - Filter({FILTER_MODE}): scored {len(probs)}/{len(frames)} frames "
         f"({detail}, {time.time() - t0:.1f}s)"
     )
-    return probs
+    return probs, {}
 
 
 def _filter_only_frames(frames, probs: Dict[str, float], yolo_times: set) -> List[tuple]:
@@ -147,6 +167,11 @@ def _filter_only_frames(frames, probs: Dict[str, float], yolo_times: set) -> Lis
         else:
             runs.append([item])
     return [max(run, key=lambda x: x[2]) for run in runs]
+
+
+def _classifier_active() -> bool:
+    """지금 점수를 내는 것이 분류기인가(옛 이진 필터가 아니라)."""
+    return CLASSIFIER_ENABLED and defect_classifier.availability()[0]
 
 
 def _outside_frames(frames) -> set:
@@ -194,9 +219,13 @@ def _filter_runs(frames, probs: Dict[str, float]) -> List[List[Path]]:
     하나의 결함은 보통 여러 프레임에 걸쳐 보인다. 프레임마다 행을 만들면 같은
     결함이 열 줄로 늘어나므로, 이어진 것끼리 한 구간으로 묶어 한 행만 만든다.
     """
-    # 관 밖은 후보에서 뺀다 — 필터가 100% 결함이라 부르는 구간이다
-    outside = _outside_frames(frames)
-    frames = [f for f in frames if str(f) not in outside] or list(frames)
+    # 관 밖 잘라내기는 **옛 이진 필터(v3)를 쓸 때만** 필요하다. v3는 관 밖을
+    # 100% 결함이라 부르지만(중앙값 0.976) 지금 분류기는 관 밖 오탐이 0%다
+    # (테스트셋 OUT_MH/OUT_CAR 0%). 프레임당 OCR이 1~2초라 필요 없으면 안 하는
+    # 편이 훨씬 빠르다.
+    if not _classifier_active():
+        outside = _outside_frames(frames)
+        frames = [f for f in frames if str(f) not in outside] or list(frames)
 
     ranked = sorted(frames, key=lambda f: -probs.get(str(f), 0.0))
     keep_n = max(1, round(len(frames) * FILTER_TOP_RATIO))
@@ -235,30 +264,6 @@ def _run_llm(frames) -> Dict[int, List[str]]:
         f" - LLM: {len(by_time)}개 프레임에서 결함 판독 ({time.time() - t0:.0f}s)"
     )
     return by_time
-
-
-def _run_classifier(frames) -> Dict[int, Tuple[str, float]]:
-    """다중 클래스 분류기로 이름을 붙인다. 모델이 없으면 빈 dict.
-
-    LLM과 달리 회사망에서도 돌고 키도 필요 없으므로 기본으로 켜져 있다.
-    """
-    if not CLASSIFIER_ENABLED:
-        return {}
-    ok, why = defect_classifier.availability()
-    if not ok:
-        ws_manager.log(f" - 분류기: {why}")
-        return {}
-
-    t0 = time.time()
-    by_path = defect_classifier.classify(frames)
-    out: Dict[int, Tuple[str, float]] = {}
-    for fp, (code, conf) in by_path.items():
-        out[_frame_sec(fp)] = (code, conf)
-    ws_manager.log(
-        f" - 분류기: {len(out)}/{len(frames)}개 프레임에 이름 "
-        f"({time.time() - t0:.0f}s)"
-    )
-    return out
 
 
 def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
@@ -486,7 +491,7 @@ def _run_batch_thread():
 
             # Stage-1 필터. parallel이면 전 프레임을 재고 YOLO 결과와 대조하고,
             # series면 통과한 프레임만 YOLO에 넘긴다.
-            probs = _run_filter(frames, path.name)
+            probs, cls_names = _run_filter(frames, path.name)
             yolo_frames = frames
             if probs and FILTER_MODE == "series":
                 # **절대 임계값이 아니라 영상 안에서의 순위로 자른다.** 학습·검증에 쓴
@@ -544,7 +549,8 @@ def _run_batch_thread():
             # lead: 필터가 고른 구간이 행이 되고, YOLO 검출은 거기에 이름으로 얹힌다.
             # 그 외 모드: YOLO가 박스를 친 프레임이 행이 된다(기존 방식).
             if probs and FILTER_MODE == "lead":
-                cls_by_time = _run_classifier(frames)
+                # 이름은 필터와 같은 호출에서 이미 나왔다 — 다시 돌리지 않는다
+                cls_by_time = {_frame_sec(f): v for f, v in cls_names.items()}
                 ws_manager.progress(path.name, idx + 1, total, "llm")
                 llm_by_time = _run_llm(frames)
                 _build_lead_rows(v_data, frames, probs, merged_rows, path,
