@@ -13,7 +13,7 @@ from .config import (CLASSIFIER_ENABLED,
                      FILTER_MAX_MISS_ROWS, FILTER_MODE, FILTER_THRESHOLD,
                      OUTSIDE_DIST_M, OUTSIDE_SCAN_MAX,
                      FILTER_TOP_RATIO,
-                     FRAME_INTERVAL)
+                     FRAME_INTERVAL, YOLO_DROP_BELOW)
 from .frames import extract_frames, seconds_to_mmss
 from .ocr import ocr_distance_from_frame, ocr_overlay_metadata, normalize_diameter_text, try_ocr_find_range
 from .rows import mark_dist_conflicts
@@ -292,6 +292,26 @@ def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
     yolo_at = {int(item.get("time_s", 0)): item for item in merged_rows}
     llm_by_time = llm_by_time or {}
     cls_by_time = cls_by_time or {}
+
+    # **분류기가 확실히 정상이라 본 프레임의 YOLO 검출은 버린다.**
+    # YOLO는 관 밖(맨홀·지상 전경)을 결함이라 부른다 — 테스트셋 실측
+    # OUT_MH 89% / OUT_CAR 82% / OUT_INVERT 82%. 분류기는 같은 사진을
+    # 0%로 정확히 정상이라 답한다(점수 0.024~0.043).
+    # 옛 v3 필터 때는 OCR로 거리를 읽어 앞부분을 잘라냈는데(_outside_frames),
+    # 분류기 점수로 같은 일을 프레임당 0초에 할 수 있다.
+    if _classifier_active() and yolo_at:
+        sec_prob = {_frame_sec(f): p for f, p in probs.items()}
+        dropped = [t for t in yolo_at
+                   if sec_prob.get(t, 1.0) < YOLO_DROP_BELOW]
+        for t in dropped:
+            del yolo_at[t]
+        if dropped:
+            ws_manager.log(
+                f" - 분류기가 정상이라 본 곳의 YOLO 검출 {len(dropped)}개 무시 "
+                f"(관 밖 오탐 방지): "
+                + ", ".join(seconds_to_mmss(t) for t in sorted(dropped)[:8])
+                + (f" … 외 {len(dropped) - 8}곳" if len(dropped) > 8 else "")
+            )
     used: set = set()
     llm_used: set = set()
 
