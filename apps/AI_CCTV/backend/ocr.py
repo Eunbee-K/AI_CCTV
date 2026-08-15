@@ -6,7 +6,7 @@ from typing import List, Tuple
 import cv2
 import numpy as np
 
-from .config import OCR_FIND_START, USE_OCR
+from .config import USE_OCR
 
 # paddlepaddle 3.x 기본 MKLDNN 가속이 이 환경(CPU 빌드)에서 텍스트 감지 모델과
 # 충돌해 NotImplementedError를 낸다. PaddleOCR import 전에 꺼야 적용된다.
@@ -53,52 +53,22 @@ def _paddleocr_read_text(reader, image) -> List[str]:
     return texts
 
 
-def try_ocr_find_range(video_path: Path) -> Tuple[int, int]:
+def video_duration_s(video_path: Path) -> int:
+    """영상 길이(초). 열지 못하면 0.
+
+    예전에는 여기서 '조사시작' 자막을 OCR로 찾아 시작 지점을 잘라냈다
+    (`try_ocr_find_range`). 지금은 관 밖 구간을 자막이 아니라 **거리 판독(OCR)과
+    분류기의 관 외부 인식**으로 걸러내므로, 영상은 항상 0초부터 끝까지 본다.
     """
-    영상 앞부분(최대 30초)에서 2초 간격으로 OCR 돌려서
-    '조사시작' 또는 '시작' 텍스트가 나온 시점을 start_s로 사용.
-    찾지 못하면 start_s=0. end_s는 항상 전체 길이(dur).
-
-    기본으로 꺼져 있다(config.OCR_FIND_START). OCR을 최대 15번 더 돌려 느린데,
-    못 찾으면 어차피 0초부터 보게 되므로 이득이 크지 않다.
-    """
-    if not USE_OCR or not OCR_FIND_START:
-        return (0, 0)
-
-    reader = get_paddleocr_reader()
-    if not reader:
-        return (0, 0)
-
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        return (0, 0)
-
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    dur = int(total / fps) if fps > 0 else 0
-
-    start_s = 0
-    end_s = dur
-
+        return 0
     try:
-        for t in range(0, min(30, dur), 2):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
-            ok, f = cap.read()
-            if not ok:
-                continue
-
-            h, w = f.shape[:2]
-            roi = f[int(h * 0.3):int(h * 0.7), int(w * 0.2):int(w * 0.8)]
-
-            txt = " ".join(_paddleocr_read_text(reader, roi))
-
-            if "조사시작" in txt or "시작" in txt:
-                start_s = t
-                break
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+        return int(total / fps) if fps > 0 else 0
     finally:
         cap.release()
-
-    return (start_s, end_s)
 
 
 def _read_frame_image(frame_path: Path):
@@ -156,11 +126,27 @@ def _parse_distance_from_text(text: str) -> str:
 
 
 def _parse_pipe_id_from_text(text: str) -> str:
+    """자막의 관로번호를 뽑는다. `SM1-121-002`, `6118-1`, `SD-A04-006` 같은 형태.
+
+    **OCR이 글자 끝에 밑줄·기호를 덧붙이는 일이 잦다** — 실제 자막이 `6118-1`인데
+    `6118-1_`로 읽혀 예전 정규식(`\\b...\\b`, 영숫자만 허용)이 통째로 놓쳤다.
+    그래서 앞뒤 경계를 `\\b` 대신 "영숫자가 아닌 것"으로 잡고, 뽑은 뒤 양끝의
+    잡문자를 털어낸다.
+    """
     s = _clean_ocr_text(text)
-    candidates = re.findall(r'\b[A-Za-z0-9]{1,12}(?:-[A-Za-z0-9]{1,12})+\b', s)
+    # 앞뒤가 영숫자만 아니면 되게 해서 `6118-1_`의 `_`에 걸리지 않도록 한다.
+    candidates = re.findall(
+        r'(?<![A-Za-z0-9])([A-Za-z0-9]{1,12}(?:-[A-Za-z0-9]{1,12})+)(?![A-Za-z0-9])', s)
     for cand in candidates:
-        if not re.search(r'\d+\.\d+\s*m', cand, flags=re.IGNORECASE):
-            return cand
+        cand = cand.strip("_-.,:;/|")          # OCR이 덧붙인 양끝 잡문자 제거
+        if not cand or "-" not in cand:
+            continue
+        # 거리 표기(`004.4m`)나 날짜(`2026-01-28`)·시각은 관로번호가 아니다.
+        if re.search(r'\d+\.\d+\s*m', cand, flags=re.IGNORECASE):
+            continue
+        if re.fullmatch(r'\d{4}-\d{1,2}-\d{1,2}', cand):
+            continue
+        return cand
     return ""
 
 

@@ -61,7 +61,7 @@ def _fill_report_meta_from_ocr(video_name: str, meta: dict) -> None:
             pipe_meta[meta_key] = value
             filled.append(f"{meta_key}={value}")
     if filled:
-        ws_manager.log(f" - 보고서 정보 자동 입력: {', '.join(filled)}")
+        ws_manager.log(f"         └ 보고서 정보 자동 입력: {', '.join(filled)}")
 
 
 def _update_travel_distance(video_name: str) -> None:
@@ -85,7 +85,7 @@ def _update_travel_distance(video_name: str) -> None:
             pipe_meta[key] = text
     if not pipe_meta.get("미주행거리"):
         pipe_meta["미주행거리"] = "0.0m"
-    ws_manager.log(f" - 총주행거리/연장 = {text} (미주행 0.0m)")
+    ws_manager.log(f"         └ 총주행거리/연장 {text} (미주행 0.0m)")
 
 
 def _run_filter(frames, video_name: str) -> Tuple[Dict[str, float],
@@ -110,18 +110,19 @@ def _run_filter(frames, video_name: str) -> Tuple[Dict[str, float],
         if ok:
             t0 = time.time()
             probs, names = defect_classifier.analyze(frames)
+            # 상위 N%를 이어진 구간으로 묶으면 몇 개인지 — 표의 행 수와 직결된다.
+            n_runs = len(_filter_runs(frames, probs))
             ws_manager.log(
-                f" - 분류기({FILTER_MODE}): {len(probs)}/{len(frames)}프레임 채점 · "
-                f"이름 {len(names)}개 (상위 {FILTER_TOP_RATIO:.0%} 통과, "
-                f"{time.time() - t0:.1f}s)"
+                f"[CLS]    EfficientNet-B0 분석 완료 — {n_runs}구간 / "
+                f"이름 {len(names)}건 ({time.time() - t0:.1f}s)"
             )
             return probs, names
-        ws_manager.log(f" - 분류기를 못 씀({why}) — 옛 이진 필터로 돌아감", "WARN")
+        ws_manager.log(f"[CLS]    분류기를 못 씀({why}) — 옛 이진 필터로 돌아감", "WARN")
 
     ok, why = defect_filter.availability()
     if not ok:
         # 필터는 보조 장치다. 없다고 분석을 멈추지 않고 알리기만 한다.
-        ws_manager.log(f" - Filter unavailable, skipping: {why}", "WARN")
+        ws_manager.log(f"[CLS]    필터를 쓸 수 없어 건너뜁니다: {why}", "WARN")
         return {}, {}
 
     t0 = time.time()
@@ -134,9 +135,8 @@ def _run_filter(frames, video_name: str) -> Tuple[Dict[str, float],
         hit = sum(1 for p in probs.values() if p >= FILTER_THRESHOLD)
         detail = f"{hit} over threshold {FILTER_THRESHOLD}"
     ws_manager.log(
-        f" - Filter({FILTER_MODE}): scored {len(probs)}/{len(frames)} frames "
-        f"({detail}, {time.time() - t0:.1f}s)"
-    )
+        f"[CLS]    옛 이진 필터 — {len(probs)}/{len(frames)}프레임 채점 "
+        f"({detail}, {time.time() - t0:.1f}s)")
     return probs, {}
 
 
@@ -201,9 +201,8 @@ def _outside_frames(frames) -> set:
     if outside:
         secs = sorted(_frame_sec(f) for f in outside)
         ws_manager.log(
-            f" - 관 밖으로 판단해 제외: {len(outside)}프레임 "
-            f"({seconds_to_mmss(secs[0])}~{seconds_to_mmss(secs[-1])})"
-        )
+            f"         └ 관 밖으로 판단해 {len(outside)}프레임 제외 "
+            f"({seconds_to_mmss(secs[0])}~{seconds_to_mmss(secs[-1])})")
     return outside
 
 
@@ -249,19 +248,19 @@ def _run_llm(frames) -> Dict[int, List[str]]:
     """LLM 판독. 꺼져 있거나 키가 없으면 빈 dict — 분석은 그대로 진행된다."""
     ok, why = llm_infer.availability()
     if not ok:
-        ws_manager.log(f" - LLM: {why}")
         return {}
 
     t0 = time.time()
-    ws_manager.log(f" - LLM 판독 시작 ({why}) — 프레임 {len(frames)}장")
+
     by_time, errors = llm_infer.analyze(frames)
     for e in errors[:3]:
-        ws_manager.log(f"   ! {e}", "ERROR")
+        ws_manager.log(f"[VLM]    {e}", "ERROR")
     if len(errors) > 3:
-        ws_manager.log(f"   ! 외 {len(errors) - 3}건", "ERROR")
+        ws_manager.log(f"[VLM]    외 {len(errors) - 3}건 오류", "ERROR")
+    _n = len({c for v in by_time.values() for c in v})
     ws_manager.log(
-        f" - LLM: {len(by_time)}개 프레임에서 결함 판독 ({time.time() - t0:.0f}s)"
-    )
+        f"[VLM]    GPT/Gemini {len(by_time)}건 탐지"
+        + (f" ({_n}종)" if _n else "") + f" ({time.time() - t0:.0f}s)")
     return by_time
 
 
@@ -284,6 +283,7 @@ def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
     만든다** — LLM은 위치를 모르기 때문이다.
     """
     runs = _filter_runs(frames, probs)
+    n_cls_runs = len(runs)
     if FILTER_MAX_MISS_ROWS > 0:
         runs = runs[:FILTER_MAX_MISS_ROWS]
 
@@ -306,11 +306,30 @@ def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
             del yolo_at[t]
         if dropped:
             ws_manager.log(
-                f" - 분류기가 정상이라 본 곳의 YOLO 검출 {len(dropped)}개 무시 "
-                f"(관 밖 오탐 방지): "
+                f"         └ 관 밖으로 판단해 YOLO 검출 {len(dropped)}건 제외: "
                 + ", ".join(seconds_to_mmss(t) for t in sorted(dropped)[:8])
-                + (f" … 외 {len(dropped) - 8}곳" if len(dropped) > 8 else "")
+                + (f" 외 {len(dropped) - 8}곳" if len(dropped) > 8 else "")
             )
+    # **합집합**: 분류기가 안 고른 곳에서 YOLO·LLM만 찾은 것도 행으로 만든다.
+    # 예전에는 분류기가 고른 구간만 행이 되고 나머지는 로그 경고로만 남겼는데,
+    # 그러면 YOLO가 단독으로 찾은 결함이 조사표에서 통째로 빠진다. 세 판독기가
+    # 독립적으로 보는 이상 결과도 합집합이어야 한다는 판단(2026-08-15).
+    covered = {t for run in runs for t in (_frame_sec(f) for f in run)}
+    extra_secs = sorted(
+        {t for t in yolo_at if t not in covered}
+        | {t for t in llm_by_time if t not in covered}
+    )
+    # 이어진 초끼리 한 구간으로 묶는다 — 분류기 쪽과 같은 규칙이다.
+    extra_runs: List[List[Path]] = []
+    for t in extra_secs:
+        fp = state.frames_root / path.stem / f"{t:06d}.jpg"
+        if extra_runs and t - _frame_sec(extra_runs[-1][-1]) <= FRAME_INTERVAL:
+            extra_runs[-1].append(fp)
+        else:
+            extra_runs.append([fp])
+    n_union_rows = len(extra_runs)
+    runs = sorted(runs + extra_runs, key=lambda r: _frame_sec(r[0]))
+
     used: set = set()
     llm_used: set = set()
 
@@ -412,25 +431,13 @@ def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
 
     rows = v_data["rows"]
     by_yolo = sum(1 for r in rows if r["boxes"])
-    # 박스가 없는데 이름이 있으면 분류기나 LLM이 붙인 것이다
-    by_other = sum(1 for r in rows if r["defects"] and not r["boxes"])
+    need_review = sum(1 for r in rows if not r["defects"])
     ws_manager.log(
-        f" - Filter(lead): {len(runs)} defect runs → {len(rows)} rows "
-        f"({by_yolo} named by YOLO, {by_other} by 분류기/LLM only, "
-        f"{len(rows) - by_yolo - by_other} need review)"
+        f"[Fusion] 통합 결함 후보 {len(rows)}건 생성 "
+        f"(CLS {n_cls_runs} · YOLO 이름 {by_yolo}"
+        + (f" · 단독발견 {n_union_rows}" if n_union_rows else "")
+        + (f" · 확인필요 {need_review}" if need_review else "") + ")"
     )
-
-    # 필터가 안 고른 곳에서 YOLO/LLM이 찾은 것. 표에는 넣지 않지만 조용히 사라지면
-    # 안 되므로 남긴다 — 이 숫자가 크면 FILTER_TOP_RATIO를 올려야 한다는 뜻이다.
-    for tag, orphan in (("YOLO", sorted(t for t in yolo_at if t not in used)),
-                        ("LLM", sorted(t for t in llm_by_time if t not in llm_used))):
-        if orphan:
-            ws_manager.log(
-                f"   ! {tag} detected at {len(orphan)} frames the filter did not pick: "
-                + ", ".join(seconds_to_mmss(t) for t in orphan[:12])
-                + (f" … 외 {len(orphan) - 12}곳" if len(orphan) > 12 else ""),
-                "WARN",
-            )
 
 
 def _apply_parallel_filter(v_data: dict, frames, probs: Dict[str, float], path) -> None:
@@ -471,10 +478,9 @@ def _apply_parallel_filter(v_data: dict, frames, probs: Dict[str, float], path) 
         })
 
     ws_manager.log(
-        f" - Filter cross-check: {suspect_fp} YOLO detections look like false positives, "
-        f"{len(missed)} frames flagged that YOLO missed"
-        + (f" (showing {len(capped)})" if len(capped) < len(missed) else "")
-    )
+        f"[CLS]    교차검증 — YOLO 오탐 의심 {suspect_fp}건 · "
+        f"YOLO가 놓친 프레임 {len(missed)}건"
+        + (f" ({len(capped)}건 표시)" if len(capped) < len(missed) else ""))
 
 
 def _run_batch_thread():
@@ -483,10 +489,10 @@ def _run_batch_thread():
         model_stats = {"yolo": 0}
         total = len(state.video_queue)
 
-        ws_manager.log(">>> Analysis Started <<<")
+        ws_manager.log("=== 분석 시작 ===")
 
         for idx, path in enumerate(state.video_queue):
-            ws_manager.log(f"Analyzing ({idx + 1}/{total}): {path.name}")
+            ws_manager.log(f"[Video]  {path.name} ({idx + 1}/{total})")
             ws_manager.progress(path.name, idx + 1, total, "start")
 
             v_data = state.video_data_map[path.name]
@@ -495,11 +501,12 @@ def _run_batch_thread():
             # 영상 전체(0초 ~ 끝)를 본다. 관 밖 구간은 여기서 잘라내지 않고
             # 거리 판독(OCR)과 분류기의 관 외부 인식이 뒤에서 걸러낸다.
             s, e = 0, video_duration_s(path)
-            ws_manager.log(f" - Range: {seconds_to_mmss(s)} ~ {seconds_to_mmss(e)} (전체)")
+            _range_txt = f"{seconds_to_mmss(s)}~{seconds_to_mmss(e)}"
 
             ws_manager.progress(path.name, idx + 1, total, "extract_frames")
             frames = extract_frames(path, state.frames_root, s, e, FRAME_INTERVAL)
-            ws_manager.log(f" - Frames extracted: {len(frames)}")
+            ws_manager.log(
+                f"[Frame]  {len(frames)}장 추출 ({FRAME_INTERVAL}s 간격) · {_range_txt}")
 
             # Stage-1 필터. parallel이면 전 프레임을 재고 YOLO 결과와 대조하고,
             # series면 통과한 프레임만 YOLO에 넘긴다.
@@ -531,17 +538,20 @@ def _run_batch_thread():
 
             ws_manager.progress(path.name, idx + 1, total, "yolo")
             if state.remote_yolo_url:
-                ws_manager.log(f" - Running YOLO inference on Colab ({state.remote_yolo_url})...")
+                pass
                 merged_rows, yolo_err = call_yolo_remote(yolo_frames, state.remote_yolo_url)
             else:
-                ws_manager.log(" - Running YOLO inference (local CPU)...")
+                pass
                 merged_rows, yolo_err = call_yolo(state.yolo_model, yolo_frames)
             if yolo_err:
-                ws_manager.log(f"   ! YOLO Error: {yolo_err}", "ERROR")
+                ws_manager.log(f"[DET]    YOLO 오류: {yolo_err}", "ERROR")
                 errors.append(yolo_err)
 
             model_stats["yolo"] += len(merged_rows)
-            ws_manager.log(f" - YOLO found {len(merged_rows)} issue frames.")
+            _n_cls = len({d for r in merged_rows for d in r.get("defects", [])})
+            ws_manager.log(
+                f"[DET]    YOLO {len(merged_rows)}건 탐지"
+                + (f" ({_n_cls}종)" if _n_cls else ""))
 
             ws_manager.progress(path.name, idx + 1, total, "ocr_meta")
             meta = ocr_overlay_metadata(frames)
@@ -558,7 +568,7 @@ def _run_batch_thread():
             src = "자막" if meta.get("pipe_id") else "파일명(자막 판독 실패)"
             v_data["dia"] = dia
             ws_manager.log(
-                f" - OCR meta: site='{site}', pipe='{pid}'({src}), dia='{dia}'")
+                "[OCR]    " + " · ".join(x for x in (site, f"관로 {pid}", dia) if x))
 
             if site and not state.site_name:
                 state.site_name = site
@@ -618,15 +628,15 @@ def _run_batch_thread():
             ws_manager.result_update(path.name)
             # 영상 하나 끝날 때마다 저장 — 중간에 죽어도 여기까지는 남는다
             session_store.save()
-            ws_manager.log(f" - Done. Found {len(v_data['rows'])} issues.")
+            ws_manager.log(f"[Done]   {path.name} · {len(v_data['rows'])}건")
 
         session_store.save()
         state.analyzing = False
         total_rows = sum(len(v["rows"]) for v in state.video_data_map.values())
-        ws_manager.log(f">>> Analysis Finished. Total {total_rows} issues found. <<<")
+        ws_manager.log(f"=== 분석 완료 · 총 {total_rows}건 ===")
         ws_manager.batch_done(model_stats, errors)
 
     except Exception as e:
         state.analyzing = False
-        ws_manager.log(f"CRITICAL ERROR: {e}", "ERROR")
+        ws_manager.log(f"[ERROR]  분석 중단: {e}", "ERROR")
         ws_manager.batch_done({"yolo": 0}, [str(e)])
