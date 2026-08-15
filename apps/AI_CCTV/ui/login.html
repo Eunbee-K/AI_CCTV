@@ -31,6 +31,15 @@
     button:hover { background: #1d4ed8; }
     .err { color: #dc2626; font-size: 12px; margin-top: 12px; min-height: 16px; }
     .hint { margin-top: 18px; font-size: 11px; color: #9ca3af; text-align: center; }
+    /* 아이디 저장 체크박스 — label의 block/margin 규칙을 덮어써 한 줄로 붙인다 */
+    .remember {
+      display: flex; align-items: center; gap: 7px;
+      margin: 14px 0 0; font-size: 12px; color: #374151; cursor: pointer;
+    }
+    .remember input {
+      width: auto; margin: 0; padding: 0; cursor: pointer;
+      accent-color: #2563eb;
+    }
   </style>
 </head>
 <body>
@@ -38,9 +47,14 @@
     <p class="brand">AI CCTV 결함 분석기</p>
     <p class="sub">승인된 계정으로 로그인하세요</p>
     <label for="username">아이디</label>
-    <input type="text" id="username" name="username" autocomplete="username" autofocus />
+    <!-- autofocus는 두지 않는다 — 저장된 아이디가 있으면 스크립트가 비밀번호로 커서를 보낸다 -->
+    <input type="text" id="username" name="username" autocomplete="username" />
     <label for="password">비밀번호</label>
     <input type="password" id="password" name="password" autocomplete="current-password" />
+    <label class="remember" for="remember">
+      <input type="checkbox" id="remember" />
+      아이디 저장
+    </label>
     <button type="submit">로그인</button>
     <div class="err" id="err"></div>
     <div class="hint">권한이 필요하면 관리자에게 문의하세요</div>
@@ -48,12 +62,31 @@
   <script>
     const form = document.getElementById("loginForm");
     const err = document.getElementById("err");
+    const userEl = document.getElementById("username");
+    const pwEl = document.getElementById("password");
+    const rememberEl = document.getElementById("remember");
+    const KEY = "aicctv.savedId";
+
+    // **아이디만 저장한다. 비밀번호는 절대 저장하지 않는다.**
+    // 저장된 아이디가 있으면 채워두고 커서를 비밀번호로 보낸다 — 다시 칠 필요가 없다.
+    const saved = localStorage.getItem(KEY);
+    if (saved) {
+      userEl.value = saved;
+      rememberEl.checked = true;
+      pwEl.focus();
+    } else {
+      userEl.focus();
+    }
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       err.textContent = "";
       const body = new FormData(form);
       const res = await fetch("/api/auth/login", { method: "POST", body });
       if (res.ok) {
+        // 로그인에 성공한 아이디만 남긴다(오타를 저장하지 않으려고).
+        if (rememberEl.checked) localStorage.setItem(KEY, userEl.value.trim());
+        else localStorage.removeItem(KEY);
         window.location.href = "/";
       } else {
         let msg = "로그인 실패";

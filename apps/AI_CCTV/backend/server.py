@@ -62,13 +62,15 @@ def create_app() -> FastAPI:
     # 안쪽=인증 게이트, 바깥=세션. add_middleware는 나중에 add한 것이 바깥(먼저 실행)
     # 이므로 SessionMiddleware를 나중에 add해야 게이트에서 scope["session"]을 읽는다.
     app.add_middleware(auth_mod.AuthGateMiddleware)
-    # **로그인 유지 시간(초).** 기본 8시간 — 하루 업무를 넘기지 않는 길이다.
-    # Starlette 기본값은 14일이라 한 번 로그인하면 2주간 로그인 화면을 못 본다.
-    # 공용 PC에서 앞사람 세션이 남는 것도 막는다. SESSION_MAX_AGE로 바꾼다.
+    # **브라우저를 닫으면 로그인이 풀린다.** max_age=None이면 만료 시각이 없는
+    # 세션 쿠키가 되어 브라우저 종료 시 사라진다 — 창을 새로 열 때마다 로그인한다.
+    # (Starlette 기본값 14일을 그대로 두면 2주간 로그인 화면을 못 본다.)
+    # 로그인을 유지하고 싶으면 SESSION_MAX_AGE에 초 단위 값을 준다.
+    _max_age = os.getenv("SESSION_MAX_AGE", "").strip()
     app.add_middleware(
         SessionMiddleware,
         secret_key=_session_secret(),
-        max_age=int(os.getenv("SESSION_MAX_AGE", str(8 * 3600))),
+        max_age=int(_max_age) if _max_age else None,
     )
 
     @app.on_event("startup")
