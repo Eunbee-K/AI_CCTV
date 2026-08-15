@@ -3,7 +3,8 @@
 배경
     지금 앱에 배포된 test5는 testset_bycode로 이름 정확도 90%가 나왔는데,
     같은 종류를 야장 사진만으로 다시 재니 33.3%로 무너졌다(2026-08-15).
-    test5의 학습 파일 목록이 워크스테이션에만 있어 유출 여부를 확정 못 했다.
+    이후 각 스윕 결과 폴더의 `used_files.csv`로 대조해 **유출이 확정**됐다
+    (testset_bycode 결함 455장 중 259장이 test5 train에 있었다).
 
     test3는 다르다 — `configs/sweeps/test3_18class.yaml`이 저장소에 있고,
     분할이 결정적이다(`scripts/sweep/collect_dataset.py::deterministic_pick`,
@@ -39,7 +40,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))          # scripts/
 sys.path.insert(0, str(Path(__file__).resolve().parent))              # scripts/classifier/
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "sweep"))
-from paths import DATASET, FILTER_DATA  # noqa: E402
+from paths import DATASET, FILTER_DATA, RESULTS  # noqa: E402
 from common import load_yaml  # noqa: E402
 from collect_dataset import build_class_pool, deterministic_pick  # noqa: E402
 # 이름표는 build_v5_and_valset의 것을 그대로 쓴다 — 검증된 매핑을 다시 베끼면
@@ -131,6 +132,37 @@ def scan_s20_aihub(used: set) -> dict:
     return pool
 
 
+def _verify_no_leak(rows: list) -> None:
+    """만든 검증셋이 test3 학습분과 정말 안 겹치는지 **결과 기록으로 재확인**한다.
+
+    위 `test3_used_files()`는 yaml+시드로 재현한 것이라, 재현이 어긋나면 유출이
+    있는데도 없다고 나올 수 있다. 스윕 결과 폴더에 남는 `used_files.csv`는 그
+    run이 **실제로 쓴** 파일 목록이므로 이쪽이 근거로 확실하다.
+
+    2026-08-15에 `testset_bycode`를 이 파일과 대조해보니 결함 455장 중 259장이
+    test5 학습분이었다 — 그 판으로 잰 YOLO 성적(90%)이 전부 무의미했다.
+    같은 일이 반복되지 않게 만들 때마다 자동으로 확인한다.
+    """
+    used_csv = (RESULTS / "test3_18class_sweep01" / "test3_960_e50" / "used_files.csv")
+    if not used_csv.exists():
+        print(f"\n[검증 생략] used_files.csv 없음: {used_csv}")
+        return
+    with open(used_csv, encoding="utf-8-sig") as f:
+        # dest_filename은 `yolo_txt_BK__원본명.png`처럼 접두어가 붙는다.
+        # 반드시 source_path(원본 절대경로)의 파일명으로 비교해야 한다.
+        used = {Path(r["source_path"]).name for r in csv.DictReader(f)}
+    mine = {Path(r["src"]).name for r in rows}
+    overlap = used & mine
+    print(f"\n[유출 검증] test3 used_files.csv {len(used):,}개와 대조 -> "
+          f"겹침 {len(overlap)}개", end="")
+    if overlap:
+        print("  !! 유출 있음")
+        for n in list(overlap)[:10]:
+            print(f"    {n}")
+    else:
+        print("  OK")
+
+
 def main():
     random.seed(0)
     out = FILTER_DATA / "test3_holdout"
@@ -194,6 +226,8 @@ def main():
             shutil.copy2(src, dst)
             rows.append({"code": code, "from": "s20aihub", "file": dst.name, "src": str(src)})
         print(f"  {code:<6}{'야장':>6} {len(take_ya):>4}  {'S20/AIHub':>10} {len(take_s2):>4}")
+
+    _verify_no_leak(rows)
 
     with open(out / "manifest.csv", "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, ["code", "from", "file", "src"])
