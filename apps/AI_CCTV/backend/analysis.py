@@ -4,8 +4,6 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-import cv2
-
 from . import (defect_classifier, defect_filter, llm_infer, session_store,
                ws_manager)
 from .annotate import annotate_frame
@@ -15,7 +13,8 @@ from .config import (CLASSIFIER_ENABLED,
                      FILTER_TOP_RATIO,
                      FRAME_INTERVAL, YOLO_DROP_BELOW)
 from .frames import extract_frames, seconds_to_mmss
-from .ocr import ocr_distance_from_frame, ocr_overlay_metadata, normalize_diameter_text, try_ocr_find_range
+from .ocr import (ocr_distance_from_frame, ocr_overlay_metadata,
+                  normalize_diameter_text, video_duration_s)
 from .rows import mark_dist_conflicts
 from .state import OCR_TO_META, state
 from .yolo_infer import call_yolo, init_yolo
@@ -493,17 +492,10 @@ def _run_batch_thread():
             v_data = state.video_data_map[path.name]
             v_data["rows"] = []
 
-            ws_manager.progress(path.name, idx + 1, total, "ocr_range")
-            s, e = try_ocr_find_range(path)
-            if s >= e:
-                cap_tmp = cv2.VideoCapture(str(path))
-                total_frames = cap_tmp.get(cv2.CAP_PROP_FRAME_COUNT) or 0
-                fps_tmp = cap_tmp.get(cv2.CAP_PROP_FPS) or 30.0
-                cap_tmp.release()
-                e = int(total_frames / fps_tmp) if fps_tmp > 0 else 0
-                s = 0
-
-            ws_manager.log(f" - Range: {seconds_to_mmss(s)} ~ {seconds_to_mmss(e)}")
+            # 영상 전체(0초 ~ 끝)를 본다. 관 밖 구간은 여기서 잘라내지 않고
+            # 거리 판독(OCR)과 분류기의 관 외부 인식이 뒤에서 걸러낸다.
+            s, e = 0, video_duration_s(path)
+            ws_manager.log(f" - Range: {seconds_to_mmss(s)} ~ {seconds_to_mmss(e)} (전체)")
 
             ws_manager.progress(path.name, idx + 1, total, "extract_frames")
             frames = extract_frames(path, state.frames_root, s, e, FRAME_INTERVAL)
@@ -553,13 +545,20 @@ def _run_batch_thread():
 
             ws_manager.progress(path.name, idx + 1, total, "ocr_meta")
             meta = ocr_overlay_metadata(frames)
-            pid = path.stem
+            # **관로번호는 자막에서 읽는다.** 예전에는 파일명(path.stem)을 그대로
+            # 썼는데, 파일명은 현장에서 임의로 붙인 일련번호인 경우가 많아
+            # 실제 관로번호와 다르다(`5982.mp4` → 자막은 `SM1-121-002`).
+            # 자막을 못 읽었을 때만 파일명으로 물러선다 — 관로번호 칸이 비면
+            # 조사표가 어느 관로 것인지 알 수 없게 되기 때문이다.
+            pid = meta.get("pipe_id", "") or path.stem
             dia = normalize_diameter_text(meta.get("diameter_text", ""))
             site = meta.get("site_name", "")
 
             v_data["pipe_id"] = pid
+            src = "자막" if meta.get("pipe_id") else "파일명(자막 판독 실패)"
             v_data["dia"] = dia
-            ws_manager.log(f" - OCR meta: site='{site}', pipe='{pid}', dia='{dia}'")
+            ws_manager.log(
+                f" - OCR meta: site='{site}', pipe='{pid}'({src}), dia='{dia}'")
 
             if site and not state.site_name:
                 state.site_name = site

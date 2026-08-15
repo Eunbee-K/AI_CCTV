@@ -126,6 +126,10 @@ class AppState:
         if path.name not in self.video_data_map:
             self.video_data_map[path.name] = {
                 "path": path,
+                # 등록 시점에는 자막을 아직 못 읽으므로 파일명을 임시로 쓴다.
+                # 분석을 돌리면 자막 OCR로 읽은 실제 관로번호로 덮어쓴다
+                # (analysis.py). 파일명은 현장 일련번호인 경우가 많아
+                # 실제 관로번호와 다르다 — `5982.mp4` 자막은 `SM1-121-002`.
                 "pipe_id": path.stem,
                 "dia": "",
                 "rows": [],
