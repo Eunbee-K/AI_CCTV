@@ -1,5 +1,6 @@
 import asyncio
 import os
+import secrets
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +15,22 @@ from .routes import export as export_routes
 from .routes import results as results_routes
 from .routes import videos as videos_routes
 from .state import state
+
+
+def _session_secret() -> str:
+    """세션 쿠키 서명 키.
+
+    **하드코딩된 기본값을 쓰면 안 된다** — 그 값은 저장소에 공개돼 있으므로
+    누구나 같은 키로 "로그인된" 쿠키를 위조할 수 있다. 환경변수가 없으면
+    서버가 뜰 때마다 새로 만든다(= 재시작하면 기존 로그인이 풀린다).
+    여러 대로 띄우거나 재시작 후에도 로그인을 유지하려면 SESSION_SECRET을 준다.
+    """
+    env = os.getenv("SESSION_SECRET", "").strip()
+    if env:
+        return env
+    print("[auth] SESSION_SECRET이 없어 임시 키를 생성했습니다 "
+          "— 서버를 재시작하면 로그인이 풀립니다.")
+    return secrets.token_urlsafe(32)
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -45,7 +62,14 @@ def create_app() -> FastAPI:
     # 안쪽=인증 게이트, 바깥=세션. add_middleware는 나중에 add한 것이 바깥(먼저 실행)
     # 이므로 SessionMiddleware를 나중에 add해야 게이트에서 scope["session"]을 읽는다.
     app.add_middleware(auth_mod.AuthGateMiddleware)
-    app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "ai-cctv-demo-secret-change-me"))
+    # **로그인 유지 시간(초).** 기본 8시간 — 하루 업무를 넘기지 않는 길이다.
+    # Starlette 기본값은 14일이라 한 번 로그인하면 2주간 로그인 화면을 못 본다.
+    # 공용 PC에서 앞사람 세션이 남는 것도 막는다. SESSION_MAX_AGE로 바꾼다.
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=_session_secret(),
+        max_age=int(os.getenv("SESSION_MAX_AGE", str(8 * 3600))),
+    )
 
     @app.on_event("startup")
     async def _capture_loop():
