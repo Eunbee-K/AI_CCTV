@@ -1,9 +1,19 @@
 """웹 배포용 실행 — 이 PC의 CPU로 직접 추론 (Colab 없이).
 
-`serve_web.py`는 그대로 두고 이 파일만 따로 쓴다. 차이는 추론 위치 하나뿐이다:
+`serve_web.py`는 그대로 두고 이 파일만 따로 쓴다. **차이는 YOLO 추론 위치 하나뿐이고**,
+분석 파이프라인(`backend/analysis.py`)과 모델 설정(`backend/config.py`)은 완전히 같다:
 
-  serve_web.py      → Colab(ngrok) 원격 추론.  UI에 연결 패널이 있다.
-  serve_web_cpu.py  → 이 PC의 CPU로 로컬 추론.  `assets/best.pt`가 있어야 한다.
+  serve_web.py      → Colab(ngrok) 원격 YOLO 추론.  UI에 연결 패널이 있다.
+  serve_web_cpu.py  → 이 PC의 CPU로 로컬 YOLO 추론.  `assets/best.pt`가 있어야 한다.
+
+**분류기(필터)는 두 판 모두 항상 로컬에서 돈다** — `assets/classifier.onnx`를
+onnxruntime으로 직접 읽으므로 Colab 연결 여부와 무관하다. 즉 이 파일을 쓰든
+serve_web.py를 쓰든 결함 구간 선별·1차 이름은 똑같이 동작한다.
+
+2026-08-15 확정 구조 기준으로 이 실행판이 쓰는 모델:
+  assets/classifier.onnx  24클래스 EfficientNet-B0 — 필터 + 1차 이름
+  assets/best.pt          YOLO test3(16결함 + PJ/IN) — 위치(박스) + 2차 이름
+(상세는 docs/reports/2026-08-15-필터C-test3-병렬-확정.md)
 
 로컬 추론에 GPU는 필요 없다. yolo11l·imgsz 960 기준 프레임당 약 0.44초(22코어)라
 6분짜리 영상이 1~2분이면 끝난다. 학습은 얘기가 다르다 — CPU로는 비현실적이니
@@ -12,7 +22,8 @@ GPU에서 돌려야 한다.
 사용 예:
   AUTH_USERS="admin:1234" python serve_web_cpu.py --port 8001
 
-모델을 바꾸려면 YOLO_MODEL_PATH 환경변수를 쓰거나 assets/best.pt를 교체한다.
+모델을 바꾸려면 YOLO_MODEL_PATH / CLASSIFIER_MODEL_PATH 환경변수를 쓰거나
+assets/ 아래 파일을 교체한다.
 """
 import argparse
 import os
@@ -31,7 +42,9 @@ import uvicorn
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRoute
 
-from backend.config import YOLO_CHUNK_SIZE, YOLO_CONF, YOLO_IMGSZ, YOLO_MODEL_PATH, resource_path
+from backend import defect_classifier
+from backend.config import (CLASSIFIER_MODEL_PATH, YOLO_CHUNK_SIZE, YOLO_CONF,
+                            YOLO_IMGSZ, YOLO_MODEL_PATH, resource_path)
 from backend.server import create_app
 from backend.state import state
 
@@ -83,8 +96,16 @@ def main():
         print(f"[cpu] 세션에 남아있던 원격 주소를 무시합니다: {state.remote_yolo_url}")
         state.remote_yolo_url = ""
 
-    print(f"[cpu] 로컬 CPU 추론 · 모델: {YOLO_MODEL_PATH.name}")
+    print(f"[cpu] 로컬 CPU 추론 · YOLO: {YOLO_MODEL_PATH.name}")
     print(f"[cpu] conf={YOLO_CONF} imgsz={YOLO_IMGSZ} chunk={YOLO_CHUNK_SIZE}장")
+    # 분류기가 결함 구간을 고르고 1차 이름까지 낸다 — 못 열리면 옛 이진 필터로
+    # 조용히 물러서므로, 어느 쪽으로 도는지 뜨는 시점에 알려준다.
+    _ok, _why = defect_classifier.availability()
+    if _ok:
+        print(f"[cpu] 분류기: {CLASSIFIER_MODEL_PATH.name} "
+              f"({len(defect_classifier._classes)}종, img {defect_classifier._size})")
+    else:
+        print(f"[cpu] 분류기를 못 씀 → 옛 이진 필터로 동작: {_why}")
     print(f"[cpu] 로그인 계정: {os.environ['AUTH_USERS']}")
     print(f"[cpu] 접속(이 PC):      http://localhost:{args.port}")
     if args.host == "0.0.0.0":
