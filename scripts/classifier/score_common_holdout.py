@@ -200,22 +200,27 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
     # 도메인이 다르면 같은 모델도 3배까지 값이 벌어진다(보고서 §3.4). 그래서
     # 칸마다 출처를 색으로 구분하고 비고에도 적는다.
     #
-    # code: (CLS 값, CLS 표본, DET 값, DET 표본, 특이사항)
+    # code: (CLS 탐지, CLS 이름, CLS 표본, DET 탐지, DET 이름, DET 표본, 특이사항)
+    #
+    # **탐지율과 이름정확도는 다른 값이다.** 이름을 못 붙여도 "결함이 있다"고는
+    # 보는 경우가 많다 — JS는 이름이 둘 다 0%인데 CLS 탐지는 100%다. 검수자에게
+    # 이름이 틀린 것은 고르면 되는 문제지만, 탐지를 못 하면 그 구간이 표에
+    # 아예 없어서 놓친 것이 된다(score_detection_only.py에서 측정).
     REF = {
-        "CM": (0.60, 20, 0.00, 20, ""),
-        "HL": (0.50, 20, 0.00, 3, "DET 표본 3장뿐"),
-        "JS": (0.00, 20, 0.00, 20, ""),
-        "LS": (0.45, 20, 0.30, 20, ""),
-        "PO": (0.30, 20, 0.00, 20, ""),
-        "RT": (0.65, 20, 0.00, 19, ""),
-        "SG": (0.95, 20, 0.00, 10, "DET 표본 10장"),
-        "TO": (0.75, 20, 0.80, 20, ""),
-        "DE": (0.93, 15, None, 0, "YOLO 미학습"),
-        "IF": (1.00, 20, None, 0, "YOLO 미학습"),
-        "ETC": (0.00, 20, None, 0, "기타(결함 종류 아님)"),
-        "CX": (None, 0, None, 0, "양쪽 데이터 없음"),
-        "NS": (None, 0, None, 0, "양쪽 데이터 없음"),
-        "PB": (None, 0, None, 0, "양쪽 데이터 없음"),
+        "CM":  (1.00, 0.60, 20, 0.35, 0.00, 20, ""),
+        "HL":  (1.00, 0.50, 20, 1.00, 0.00, 3, "DET 표본 3장뿐"),
+        "JS":  (1.00, 0.00, 20, 0.20, 0.00, 20, ""),
+        "LS":  (1.00, 0.45, 20, 0.85, 0.30, 20, ""),
+        "PO":  (1.00, 0.30, 20, 0.45, 0.00, 20, ""),
+        "RT":  (1.00, 0.65, 20, 0.32, 0.00, 19, ""),
+        "SG":  (1.00, 0.95, 20, 0.30, 0.00, 10, "DET 표본 10장"),
+        "TO":  (1.00, 0.75, 20, 0.95, 0.80, 20, ""),
+        "DE":  (1.00, 0.93, 15, None, None, 0, "YOLO 미학습"),
+        "IF":  (1.00, 1.00, 20, None, None, 0, "YOLO 미학습"),
+        "ETC": (0.80, 0.00, 20, None, None, 0, "기타(결함 종류 아님)"),
+        "CX":  (None, None, 0, None, None, 0, "양쪽 데이터 없음"),
+        "NS":  (None, None, 0, None, None, 0, "양쪽 데이터 없음"),
+        "PB":  (None, None, 0, None, None, 0, "양쪽 데이터 없음"),
     }
     ALL31 = ["CC", "CL", "CM", "SD", "BC", "LD", "DF", "BK", "CX", "PO", "HL",
              "LP", "LS", "JS", "JF", "JD", "NS", "SG", "DE", "DS", "DG", "TO",
@@ -297,28 +302,35 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
             put(r, 2, n, font=bold, fill_=C_COMMON)
             for col, key in ((3, "cls_hit"), (4, "det_hit"), (5, "hit_union"),
                              (6, "cls_name"), (7, "det_name"), (8, "union")):
-                put(r, col, s[key] / n, font=bold, fmt="0%", fill_=C_COMMON)
+                v = s.get(key, -1)
+                # -1은 "이 판에서 아직 안 잰 값"이다(탐지 합집합은 사진 단위라
+                # 종류별 합계만으로 복원할 수 없다). 0%로 보이면 오해를 부른다.
+                put(r, col, (v / n) if v >= 0 else "-",
+                    font=bold, fmt="0%", fill_=C_COMMON)
             note = "" if s["yolo_can"] else "YOLO에 클래스 없음 → DET 이름 0%는 구조적"
             ws.cell(row=r, column=9, value=note).font = note_f
         else:
-            cls_v, cls_n, det_v, det_n, extra = REF.get(code, (None, 0, None, 0, "미측정"))
+            (cls_hit_v, cls_name_v, cls_n,
+             det_hit_v, det_name_v, det_n, extra) = REF.get(
+                code, (None, None, 0, None, None, 0, "미측정"))
             put(r, 1, code)
             put(r, 2, "-")
-            # 탐지율은 참고치가 없다(기존 판에서 이름정확도만 기록했다).
-            put(r, 3, "-", fill_=C_NONE)
-            put(r, 4, "-", fill_=C_NONE)
-            put(r, 5, "-", fill_=C_NONE)
-            # 이름정확도 — CLS는 testset_bycode(노랑), DET는 test3_holdout(주황).
-            put(r, 6, cls_v if cls_v is not None else "-",
-                font=f_ref, fmt="0%", fill_=(C_TESTSET if cls_v is not None else C_NONE))
-            put(r, 7, det_v if det_v is not None else "-",
-                font=f_ref, fmt="0%", fill_=(C_YAJANG if det_v is not None else C_NONE))
-            put(r, 8, "-", fill_=C_NONE)                     # 합집합은 낼 수 없다
+            # CLS 칸은 testset_bycode(노랑), DET 칸은 test3_holdout(주황).
+            put(r, 3, cls_hit_v if cls_hit_v is not None else "-",
+                font=f_ref, fmt="0%", fill_=(C_TESTSET if cls_hit_v is not None else C_NONE))
+            put(r, 4, det_hit_v if det_hit_v is not None else "-",
+                font=f_ref, fmt="0%", fill_=(C_YAJANG if det_hit_v is not None else C_NONE))
+            put(r, 5, "-", fill_=C_NONE)                     # 탐지 합집합은 낼 수 없다
+            put(r, 6, cls_name_v if cls_name_v is not None else "-",
+                font=f_ref, fmt="0%", fill_=(C_TESTSET if cls_name_v is not None else C_NONE))
+            put(r, 7, det_name_v if det_name_v is not None else "-",
+                font=f_ref, fmt="0%", fill_=(C_YAJANG if det_name_v is not None else C_NONE))
+            put(r, 8, "-", fill_=C_NONE)                     # 이름 합집합도 마찬가지
             # 칸마다 출처가 다르므로 비고에 둘 다 적는다.
             parts = []
-            if cls_v is not None:
+            if cls_hit_v is not None:
                 parts.append(f"CLS: testset_bycode {cls_n}장")
-            if det_v is not None:
+            if det_hit_v is not None:
                 parts.append(f"DET: 야장 {det_n}장")
             if extra:
                 parts.append(extra)
@@ -341,10 +353,13 @@ def _write_xlsx(st, both_known, cls_only_codes, defect_codes, thr, args):
                            ("union", "이름 합집합(둘 중 하나라도 맞힘)"),
                            ("both", "이름 겹침(둘 다 맞힘)"),
                            ("cls_only", "이름 CLS만 맞힘"), ("det_only", "이름 DET만 맞힘")):
-            a = sum(st[c][key] for c in codes)
-            b = sum(st[c]["n"] for c in codes)
+            vals = [st[c].get(key, -1) for c in codes]
             ws.cell(row=r, column=1, value=label)
-            put(r, 2, a / b, font=bold, fmt="0.0%")
+            if any(v < 0 for v in vals):
+                put(r, 2, "-", font=bold)          # 미측정 항목이 섞이면 평균도 못 낸다
+            else:
+                b = sum(st[c]["n"] for c in codes)
+                put(r, 2, sum(vals) / b, font=bold, fmt="0.0%")
             r += 1
 
     block(sorted(measured), f"[측정한 {len(measured)}종 전체 평균] — 이 판의 대표값")
