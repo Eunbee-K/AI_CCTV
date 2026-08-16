@@ -45,6 +45,8 @@ def _row_json(seq, row: dict, fname: str, v_data: dict) -> dict:
         "defects_ko": [defect_korean(d) for d in defects],
         # 결함 등급(소/중/대). 파이프에셋 야장 캡션에 들어간다. 기본 "중".
         "grade": row.get("grade") or "중",
+        # 신뢰도(0~1) — YOLO 박스가 있으면 그 최고값, 없으면 분류기 확률.
+        "conf": row.get("conf") or 0,
         "note": row.get("note", ""),
         "direction": row.get("direction", ""),
         "boxes": row.get("boxes_norm", []),  # 오버레이용 정규화(0~1) 박스
@@ -117,15 +119,30 @@ def build_results_view(only_video: Optional[str] = None) -> List[dict]:
                         "type": "row",
                         **_row_json(f"{seq}-{child_idx}", row, fname, v_data),
                     })
+                # 그룹의 대표는 첫 행이다. **time_s를 반드시 실어야** 그룹 줄을
+                # 눌렀을 때도 영상이 그 시점으로 이동한다(예전에는 time_str만
+                # 있어서 접힌 줄은 클릭해도 아무 일이 없었다).
+                head = group_rows[0]
+                # 묶인 결함 이름을 모아 보여준다 — "3개 결함"만으로는 뭘 묶었는지
+                # 알 수 없어 펼쳐보기 전에는 판단이 안 됐다.
+                names: list = []
+                for r in group_rows:
+                    for d in r.get("defects", []):
+                        if d not in names:
+                            names.append(d)
+                summary = ", ".join(names) if names else f"{len(group_rows)}개 구간"
                 display.append({
                     "type": "group",
                     "seq": seq,
-                    "time_str": seconds_to_mmss(group_rows[0]["time"]),
+                    "time_s": head["time"],
+                    "time_str": seconds_to_mmss(head["time"]),
                     "pipe_id": v_data["pipe_id"],
                     "dia": v_data["dia"],
                     "dist": dist,
-                    "defects_summary": f"{len(group_rows)}개 결함",
-                    "note": "확인필요",
+                    "defects_summary": summary,
+                    "conf": max((r.get("conf") or 0) for r in group_rows),
+                    "grade": head.get("grade") or "중",
+                    "note": "",
                     "filename": fname,
                     "children": children,
                 })

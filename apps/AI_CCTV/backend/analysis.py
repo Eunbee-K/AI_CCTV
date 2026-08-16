@@ -27,11 +27,18 @@ def ensure_yolo_loaded():
     return state.yolo_model, state.yolo_load_error
 
 
-def start_analysis() -> Optional[str]:
+def start_analysis(only_video: Optional[str] = None) -> Optional[str]:
+    """분석을 시작한다. only_video를 주면 그 영상 하나만 돌린다.
+
+    영상 하나만 다시 보고 싶은데 큐 전체가 도는 것을 기다려야 하는 일이 잦아
+    [분석 시작](선택 영상)과 [전체 분석]을 나눴다.
+    """
     if state.analyzing:
         return "Analysis already running"
     if not state.video_queue:
         return "No videos to analyze"
+    if only_video and not any(p.name == only_video for p in state.video_queue):
+        return f"목록에 없는 영상입니다: {only_video}"
     if not state.pipe_condition:
         return "관로 구분(신설/노후)을 선택한 뒤 분석을 실행하세요."
 
@@ -42,7 +49,8 @@ def start_analysis() -> Optional[str]:
             return f"YOLO model not loaded: {err}"
 
     state.analyzing = True
-    threading.Thread(target=_run_batch_thread, daemon=True).start()
+    state.cancel_requested = False
+    threading.Thread(target=_run_batch_thread, args=(only_video,), daemon=True).start()
     return None
 
 
@@ -166,6 +174,26 @@ def _filter_only_frames(frames, probs: Dict[str, float], yolo_times: set) -> Lis
         else:
             runs.append([item])
     return [max(run, key=lambda x: x[2]) for run in runs]
+
+
+def _visible_row_count() -> int:
+    """표에 실제로 보이는 줄 수. **접힌 그룹은 1건으로 센다.**
+
+    build_results_view가 만드는 것과 같은 규칙이라 화면과 숫자가 어긋나지 않는다.
+    """
+    from .rows import build_results_view
+    return sum(1 for x in build_results_view()
+               if x.get("type") in ("row", "group"))
+
+
+def _is_zero_dist(dist) -> bool:
+    """자막 거리가 0m인가. `000.0m` / `0.00m` / `0` 형태를 모두 받는다.
+
+    거리를 못 읽은 행(빈 문자열)은 0m으로 보지 않는다 — 판독 실패일 뿐
+    관 밖이라는 뜻이 아니라서, 지우면 진짜 결함을 잃을 수 있다.
+    """
+    m = re.search(r"(\d+(?:\.\d+)?)", str(dist or ""))
+    return bool(m) and float(m.group(1)) == 0.0
 
 
 def _classifier_active() -> bool:
@@ -387,15 +415,26 @@ def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
                 cls_names = [max(cand, key=lambda kv: kv[1])[0]]
 
         yolo_names = list(item.get("defects", []))
-        # YOLO가 이름을 못 붙였으면 다른 판독자 것을 그대로 쓴다. 붙였으면 YOLO를
-        # 앞에 두고 나머지가 추가로 본 것만 뒤에 붙인다 — 박스가 있는 쪽이 근거가
-        # 분명하다. 분류기를 LLM보다 앞에 두는 것은 회사망에서도 늘 돌기 때문이다.
+        # **같은 이름을 둘이 잡았으면 한 번만 쓴다.** 다르게 봤을 때만 둘 다
+        # 후보로 올린다 — 검수자가 고를 수 있게. YOLO를 앞에 두는 것은 박스가
+        # 있어 근거가 눈에 보이기 때문이고, 분류기를 LLM보다 앞에 두는 것은
+        # 회사망에서도 늘 돌기 때문이다.
         extra = [c for c in cls_names + llm_names if c not in yolo_names]
         seen: set = set()
         extra = [c for c in extra if not (c in seen or seen.add(c))]
         defects = yolo_names + extra
-        cls_only = [c for c in cls_names if c not in yolo_names]
-        llm_only = [c for c in llm_names if c not in yolo_names and c not in cls_names]
+
+        # 이 행의 신뢰도 — **이름에 대한 확신**이다. 결함 유무 확률이 아니다.
+        # 이름이 없는 행에 "96%"가 뜨면 "무슨 결함인지 96% 확신한다"로 읽혀
+        # 오해를 부른다(그건 '결함이긴 하다'는 확률일 뿐이다). 이름이 붙은
+        # 행에만 값을 준다.
+        conf = 0.0
+        if defects:
+            if item.get("boxes"):
+                conf = best_conf(item)          # YOLO 박스 신뢰도
+            if not conf and cls_by_time:        # 박스가 없으면 분류기 확신
+                cand = [cls_by_time[t][1] for t in secs if t in cls_by_time]
+                conf = max(cand) if cand else 0.0
 
         # **비고는 구간 표시만 남긴다.** 어느 판독기가 잡았는지는 검수자에게
         # 쓸모가 없고(고칠 때 판단이 달라지지 않는다), "확인필요"는 모든 행에
@@ -414,12 +453,21 @@ def _build_lead_rows(v_data: dict, frames, probs: Dict[str, float],
             "boxes_norm": norm_boxes,
             "fp": False,
             "grade": "중",
+            "conf": round(float(conf), 4),      # 표의 신뢰도 열
             "direction": item.get("direction", ""),
             "filter_prob": probs.get(str(frame_fp)),
             # 이름이 없는 행은 거리 그룹에 접히면 찾을 수 없다. 수동 행과 같은 취급.
             "manual": not defects,
             "filter_only": not defects,
         })
+
+    # **거리 0m 구간은 버린다.** 카메라가 아직 관 안으로 들어가기 전(맨홀 위·
+    # 지상 전경)이라 결함일 수 없다. CLS든 DET든 여기서 무엇을 잡았든 마찬가지다.
+    n_before = len(v_data["rows"])
+    v_data["rows"] = [r for r in v_data["rows"] if not _is_zero_dist(r.get("dist"))]
+    n_zero = n_before - len(v_data["rows"])
+    if n_zero:
+        ws_manager.log(f"         └ 거리 0m 구간 {n_zero}건 제외 (관 밖)")
 
     rows = v_data["rows"]
     by_yolo = sum(1 for r in rows if r["boxes"])
@@ -475,15 +523,23 @@ def _apply_parallel_filter(v_data: dict, frames, probs: Dict[str, float], path) 
         + (f" ({len(capped)}건 표시)" if len(capped) < len(missed) else ""))
 
 
-def _run_batch_thread():
+def _run_batch_thread(only_video: Optional[str] = None):
     try:
         errors = []
         model_stats = {"yolo": 0}
-        total = len(state.video_queue)
+        targets = [p for p in state.video_queue
+                   if not only_video or p.name == only_video]
+        total = len(targets)
 
-        ws_manager.log("=== 분석 시작 ===")
+        ws_manager.log("=== 분석 시작 ===" if not only_video
+                       else f"=== 분석 시작 ({only_video}) ===")
 
-        for idx, path in enumerate(state.video_queue):
+        for idx, path in enumerate(targets):
+            # [초기화]를 누르면 여기서 빠져나온다. 스레드를 강제로 죽일 방법이
+            # 없어 영상 경계마다 확인한다.
+            if state.cancel_requested:
+                ws_manager.log("=== 분석 중단 (초기화) ===", "WARN")
+                break
             ws_manager.log(f"[Video]  {path.name} ({idx + 1}/{total})")
             ws_manager.progress(path.name, idx + 1, total, "start")
 
@@ -624,8 +680,11 @@ def _run_batch_thread():
 
         session_store.save()
         state.analyzing = False
-        total_rows = sum(len(v["rows"]) for v in state.video_data_map.values())
+        # **표에 보이는 줄 수로 센다** — 같은 거리로 접힌 그룹은 1건이다.
+        # 사용자가 화면에서 세는 수와 알림의 수가 달라지면 안 된다.
+        total_rows = _visible_row_count()
         ws_manager.log(f"=== 분석 완료 · 총 {total_rows}건 ===")
+        model_stats["defects"] = total_rows
         ws_manager.batch_done(model_stats, errors)
 
     except Exception as e:

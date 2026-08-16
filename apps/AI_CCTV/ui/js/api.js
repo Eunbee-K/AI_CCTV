@@ -83,7 +83,9 @@ export const api = {
   clearQueue: () => req("POST", "/api/queue/clear"),
   selectVideo: (name) => req("POST", "/api/queue/select", { name }),
 
-  runAnalysis: () => req("POST", "/api/analysis/run"),
+  // video를 주면 그 영상만, 없으면 큐 전체를 분석한다.
+  runAnalysis: (video) => req("POST",
+    "/api/analysis/run" + (video ? `?video=${encodeURIComponent(video)}` : "")),
 
   getResults: (video) =>
     req("GET", "/api/results" + (video ? `?video=${encodeURIComponent(video)}` : "")),

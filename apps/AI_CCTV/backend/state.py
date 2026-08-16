@@ -84,6 +84,9 @@ class AppState:
         # (결함 판정 기준이 달라서 빈 값으로 돌리면 보고서가 무의미해진다).
         self.pipe_condition: str = ""
         self.analyzing: bool = False
+        # 분석 중 [초기화]를 누르면 True가 된다. 분석 스레드가 영상 하나를
+        # 끝낼 때마다 확인해 스스로 빠져나온다(강제 종료할 방법이 없어서).
+        self.cancel_requested: bool = False
 
         # 파이프에셋 야장 상단 표 중 현장 전체에 공통인 항목.
         # 관로별 항목은 video_data_map[name]["meta"]에 따로 들어간다.

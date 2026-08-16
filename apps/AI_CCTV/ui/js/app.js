@@ -141,11 +141,14 @@ async function init() {
   });
   on("batch_done", async (msg) => {
     await refreshResults();
-    const totalRows = msg.stats && typeof msg.stats.yolo === "number" ? msg.stats.yolo : 0;
+    // 서버가 '표에 보이는 줄 수'를 defects로 준다(접힌 그룹은 1건).
+    const totalRows = msg.stats && typeof msg.stats.defects === "number"
+      ? msg.stats.defects
+      : (msg.stats && typeof msg.stats.yolo === "number" ? msg.stats.yolo : 0);
     if (msg.errors && msg.errors.length && totalRows === 0) {
       alert(`결과가 없습니다.\n${[...new Set(msg.errors)].slice(0, 3).join("\n")}`);
     } else {
-      alert(`분석 완료!\n[YOLO] 감지 프레임: ${totalRows}`);
+      alert(`분석 완료!\n결함 ${totalRows}건 확인`);
     }
   });
 
@@ -246,20 +249,33 @@ async function init() {
     await refreshResults();
   });
 
-  document.getElementById("btnRun").addEventListener("click", async () => {
+  /** 분석 실행 — onlyCurrent면 지금 선택된 영상 하나만 돌린다. */
+  async function runAnalysis(onlyCurrent) {
     // 관로 구분을 안 고르면 결함 판정 기준이 정해지지 않아 분석 의미가 없다.
     if (!getPipeCondition()) {
       alert("관로 구분을 선택하세요.\n\n[신설] 또는 [노후] 중 하나를 체크한 뒤 분석을 실행할 수 있습니다.");
       document.getElementById("condNew").focus();
       return;
     }
+    let target = null;
+    if (onlyCurrent) {
+      target = getCurrentVideo();
+      if (!target) {
+        alert("먼저 영상을 선택하세요.\n(왼쪽 '분석 대기 영상' 목록에서 클릭)");
+        return;
+      }
+    }
     try {
-      analysisFollow = true;   // 새 분석이니 다시 따라간다
-      await api.runAnalysis();
+      // 한 영상만 돌릴 때는 화면을 옮길 이유가 없다 — 이미 그 영상을 보고 있다.
+      analysisFollow = !onlyCurrent;
+      await api.runAnalysis(target);
     } catch (e) {
       alert(e.message);
     }
-  });
+  }
+
+  document.getElementById("btnRun").addEventListener("click", () => runAnalysis(true));
+  document.getElementById("btnRunAll").addEventListener("click", () => runAnalysis(false));
 
   document.getElementById("btnAddRow").addEventListener("click", async () => {
     const video = getCurrentVideo();
@@ -301,8 +317,11 @@ async function init() {
 
   // ── 초기화: 영상·결함·현장정보를 모두 비운다 (되돌릴 수 없음) ──
   document.getElementById("btnReset").addEventListener("click", async () => {
+    // 분석 중이면 그 사실을 먼저 알린다 — 눌러도 되지만 진행분이 사라진다.
+    const running = statusEl.textContent.includes("분석중");
     const ok = confirm(
-      "지금까지의 작업을 모두 지웁니다.\n\n"
+      (running ? "⚠ 분석이 진행 중입니다. 중단하고 초기화합니다.\n\n" : "")
+      + "지금까지의 작업을 모두 지웁니다.\n\n"
       + "· 영상 목록과 분석 결과\n"
       + "· 현장명·보고서 정보\n"
       + "· 저장된 프레임 이미지와 업로드 영상\n\n"

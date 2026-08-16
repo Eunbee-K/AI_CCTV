@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from ..analysis import start_analysis
@@ -8,8 +10,9 @@ ws_router = APIRouter()
 
 
 @router.post("/run")
-def run_analysis():
-    err = start_analysis()
+def run_analysis(video: Optional[str] = None):
+    """video를 주면 그 영상만, 없으면 큐 전체를 분석한다."""
+    err = start_analysis(video)
     if err:
         raise HTTPException(400, err)
     return {"status": "started"}

@@ -134,7 +134,8 @@ def _parse_pipe_id_from_text(text: str) -> str:
     잡문자를 털어낸다.
     """
     s = _clean_ocr_text(text)
-    # 앞뒤가 영숫자만 아니면 되게 해서 `6118-1_`의 `_`에 걸리지 않도록 한다.
+    # 1) 하이픈이 있는 형태를 먼저 찾는다 — `SM1-121-002` / `6118-1` / `SD-A04-006`.
+    #    앞뒤가 영숫자만 아니면 되게 해서 `6118-1_`의 `_`에 걸리지 않도록 한다.
     candidates = re.findall(
         r'(?<![A-Za-z0-9])([A-Za-z0-9]{1,12}(?:-[A-Za-z0-9]{1,12})+)(?![A-Za-z0-9])', s)
     for cand in candidates:
@@ -147,7 +148,19 @@ def _parse_pipe_id_from_text(text: str) -> str:
         if re.fullmatch(r'\d{4}-\d{1,2}-\d{1,2}', cand):
             continue
         return cand
-    return ""
+
+    # 2) 하이픈이 없는 형태 — 자막에 `R 5980`처럼 숫자만 오는 현장이 있다.
+    #    `R`은 역주행(Reverse) 표시라 그 뒤 숫자가 관로번호다.
+    m = re.search(r'(?<![A-Za-z0-9])R\s*(\d{3,8})(?![A-Za-z0-9])', s)
+    if m:
+        return m.group(1)
+    # 거리(`019.5m`)·맨홀(`#1`)을 지운 뒤 남는 3~8자리 숫자를 관로번호로 본다.
+    rest = re.sub(r'\d+(?:\.\d+)?\s*m', ' ', s, flags=re.IGNORECASE)
+    rest = re.sub(r'#\s*\d+', ' ', rest)
+    rest = re.sub(r'\d{4}\s*[-.]\s*\d{1,2}\s*[-.]\s*\d{1,2}', ' ', rest)   # 날짜
+    rest = re.sub(r'\d{1,2}\s*[:：]\s*\d{1,2}(?:\s*[:：]\s*\d{1,2})?', ' ', rest)
+    m = re.search(r'(?<![A-Za-z0-9.])(\d{3,8})(?![A-Za-z0-9.])', rest)
+    return m.group(1) if m else ""
 
 
 def _parse_diameter_from_text(text: str) -> str:

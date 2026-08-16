@@ -74,9 +74,14 @@ def reset_all():
 
     세션이 디스크에 남아 서버를 껐다 켜도 지난 작업이 계속 복원되므로,
     새 현장을 시작할 때 손으로 지울 방법이 필요하다.
+
+    **분석 중이어도 멈추고 초기화한다.** 예전에는 거부했는데, 잘못 건 분석이
+    수십 분씩 도는 동안 아무것도 못 하게 되는 쪽이 더 불편하다. 분석 스레드는
+    state.analyzing을 매 영상마다 확인해 스스로 빠져나온다.
     """
     if state.analyzing:
-        raise HTTPException(400, "분석이 진행 중입니다. 끝난 뒤에 초기화하세요.")
+        state.cancel_requested = True
+        state.analyzing = False
     summary = state.reset_all()
     session_store.save()
     return {"status": "ok", **summary}

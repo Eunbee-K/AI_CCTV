@@ -33,16 +33,23 @@ function rowKey(video, time_s) {
 // 등급은 드롭다운이라 셀 편집(더블클릭) 대상이 아니다.
 const COL_DEFECTS = 3;
 const COL_GRADE = 4;
-const COL_COUNT = 6;                          // 구분선 colSpan용
+const COL_CONF = 5;
+const COL_COUNT = 7;                          // 구분선 colSpan용
 const READONLY_COLS = new Set([0, 1, COL_GRADE]);
 const GRADES = ["소", "중", "대"];
 
 function editableFieldForColumn(colIdx) {
-  return ["", "", "dist", "defects", "", "note"][colIdx] || "";
+  return ["", "", "dist", "defects", "", "", "note"][colIdx] || "";
 }
 
 /** 표시용 결함 문구: "BK(파손), DS(토사퇴적)". 엑셀 보고서와 같은 순서로 맞춘다.
  *  한글명을 모르는 코드는 코드만 그대로 쓴다. */
+/** 신뢰도(0~1)를 표시용 문자열로. 값이 없으면 빈 칸. */
+function confText(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? `${Math.round(n * 100)}%` : "";
+}
+
 function defectsText(row) {
   const codes = row.defects || [];
   const kos = row.defects_ko || [];
@@ -63,7 +70,8 @@ function cellValue(row, colIdx) {
     case 2: return row.dist;
     case 3: return (row.defects || []).join(", ");
     case 4: return row.grade || "중";
-    case 5: return row.note;
+    case 5: return row.conf;
+    case 6: return row.note;
     default: return "";
   }
 }
@@ -193,7 +201,8 @@ function buildRowTr(row, extraClass, inGroup) {
   const key = rowKey(row.filename, row.time_s);
   if (selected.has(key)) tr.classList.add("row-selected");
 
-  const cols = [row.seq, row.time_str, row.dist, defectsText(row), null, row.note];
+  const cols = [row.seq, row.time_str, row.dist, defectsText(row), null,
+                confText(row.conf), row.note];
   cols.forEach((val, idx) => {
     const td = document.createElement("td");
     if (idx === COL_GRADE) {
@@ -217,7 +226,13 @@ function buildRowTr(row, extraClass, inGroup) {
     } else {
       td.textContent = val;
       if (idx === COL_DEFECTS) td.classList.add("col-defects");
-      makeCellEditable(td, row, idx);
+      // 신뢰도 90% 이상은 색으로 짚어준다 — 검수자가 먼저 볼 행을 고르게.
+      if (idx === COL_CONF) {
+        td.classList.add("col-conf");
+        if (Number(row.conf) >= 0.9) td.classList.add("conf-high");
+      } else {
+        makeCellEditable(td, row, idx);
+      }
     }
     tr.appendChild(td);
   });
@@ -374,7 +389,7 @@ export function renderResults(data) {
       if (selected.has(`group:${groupKey}`)) tr.classList.add("row-selected");
 
       const cols = [item.seq, item.time_str, item.dist,
-                    item.defects_summary, "", item.note];
+                    item.defects_summary, "", confText(item.conf), item.note];
       cols.forEach((val, idx) => {
         const td = document.createElement("td");
         if (idx === 0) {
@@ -393,6 +408,10 @@ export function renderResults(data) {
           td.textContent = val;
         }
         if (idx === COL_DEFECTS) td.classList.add("col-defects");
+        if (idx === COL_CONF) {
+          td.classList.add("col-conf");
+          if (Number(item.conf) >= 0.9) td.classList.add("conf-high");
+        }
         tr.appendChild(td);
       });
 
@@ -402,6 +421,10 @@ export function renderResults(data) {
       });
       tr.addEventListener("click", (e) => {
         handleSelectClick(e, `group:${groupKey}`);
+        // **접힌 줄을 눌러도 영상이 그 시점으로 간다.** 예전에는 선택만 되고
+        // 이동이 없어서 "접힌 건 클릭이 안 먹는다"로 보였다. 그룹의 대표는
+        // 첫 행이므로 그 시각으로 보낸다(서버가 time_s를 실어 준다).
+        activateRow(item);
       });
       tbody.appendChild(tr);
 
