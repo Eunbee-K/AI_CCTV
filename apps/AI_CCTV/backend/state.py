@@ -172,9 +172,22 @@ class AppState:
             v["meta"] = dict(PIPE_META_FIELDS)
         return v["meta"]
 
-    def clear_videos(self):
+    def clear_videos(self, only: Optional[str] = None) -> int:
+        """영상을 목록에서 뺀다. only를 주면 그 영상 하나만.
+
+        반환값은 실제로 제거한 개수. 전체 삭제는 [초기화]가 따로 있으므로
+        [목록삭제]는 기본으로 **선택한 영상만** 지운다 — 여러 개를 올려두고
+        하나만 빼려다 전부 날리는 일이 있었다.
+        """
+        if only:
+            before = len(self.video_queue)
+            self.video_queue = [p for p in self.video_queue if p.name != only]
+            self.video_data_map.pop(only, None)
+            return before - len(self.video_queue)
+        n = len(self.video_queue)
         self.video_queue.clear()
         self.video_data_map.clear()
+        return n
 
     def reset_all(self, purge_files: bool = True) -> dict:
         """작업을 처음 상태로 되돌린다. 반환값은 무엇을 얼마나 지웠는지 요약.

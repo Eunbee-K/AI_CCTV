@@ -80,7 +80,9 @@ export const api = {
   getQueue: () => req("GET", "/api/queue"),
   addVideos: (paths) => req("POST", "/api/queue/add", { paths }),
   uploadVideos,
-  clearQueue: () => req("POST", "/api/queue/clear"),
+  // video를 주면 그 영상만 목록에서 뺀다.
+  clearQueue: (video) => req("POST",
+    "/api/queue/clear" + (video ? `?video=${encodeURIComponent(video)}` : "")),
   selectVideo: (name) => req("POST", "/api/queue/select", { name }),
 
   // video를 주면 그 영상만, 없으면 큐 전체를 분석한다.
@@ -123,8 +125,13 @@ export const api = {
 
   previewFrameUrl: (name, t) =>
     `/api/preview/frame?name=${encodeURIComponent(name)}&t=${t}`,
-  previewStreamUrl: (name, startT, speed = 1) =>
-    `/api/preview/stream?name=${encodeURIComponent(name)}&start_t=${startT}&speed=${speed}`,
+  // sid: 이 재생 세션의 식별자. 정지할 때 stream_pos로 실제 위치를 되물으려면
+  // 서버가 어느 스트림인지 알아야 한다.
+  previewStreamUrl: (name, startT, speed = 1, sid = "") =>
+    `/api/preview/stream?name=${encodeURIComponent(name)}&start_t=${startT}&speed=${speed}&sid=${encodeURIComponent(sid)}`,
+  // 재생 중인 스트림이 실제로 보여준 마지막 프레임의 시각(초).
+  streamPos: (name, sid = "") =>
+    req("GET", `/api/preview/stream_pos?name=${encodeURIComponent(name)}&sid=${encodeURIComponent(sid)}`),
   detectionFrameUrl: (name, timeS) =>
     `/api/results/frame?video=${encodeURIComponent(name)}&time_s=${timeS}`,
 };

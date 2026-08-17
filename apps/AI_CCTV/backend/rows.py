@@ -51,6 +51,9 @@ def _row_json(seq, row: dict, fname: str, v_data: dict) -> dict:
         "direction": row.get("direction", ""),
         "boxes": row.get("boxes_norm", []),  # 오버레이용 정규화(0~1) 박스
         "fp": bool(row.get("fp", False)),    # 오탐(false positive) 마킹
+        # 사람이 [행추가]로 직접 넣은 행. 신뢰도가 없는 게 정상이므로
+        # 신뢰도 필터가 이 행은 건너뛴다(검수자가 넣은 걸 숨기면 안 된다).
+        "manual": bool(row.get("manual", False)),
         "filename": fname,
     }
 
@@ -141,6 +144,8 @@ def build_results_view(only_video: Optional[str] = None) -> List[dict]:
                     "dist": dist,
                     "defects_summary": summary,
                     "conf": max((r.get("conf") or 0) for r in group_rows),
+                    # 안에 사람이 넣은 행이 하나라도 있으면 그룹째 숨기지 않는다.
+                    "manual": any(r.get("manual") for r in group_rows),
                     "grade": head.get("grade") or "중",
                     "note": "",
                     "filename": fname,

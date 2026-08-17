@@ -186,20 +186,53 @@ export function showDetectionFrame(name, timeS, boxes) {
   renderOverlay();
 }
 
+// 지금 열려 있는 스트림의 식별자. 정지할 때 서버에 "이 스트림 어디까지 갔냐"고
+// 물어보기 위해 필요하다.
+let streamSid = "";
+
 function startStream() {
   if (!player.name) return;
   pinnedBoxes = null;
-  previewImg.src = api.previewStreamUrl(player.name, player.currentTime, player.speed);
+  streamSid = String(Date.now());
+  previewImg.src = api.previewStreamUrl(
+    player.name, player.currentTime, player.speed, streamSid);
   clearInterval(player._tick);
-  const startedAt = Date.now();
-  const baseTime = player.currentTime;
+  // 벽시계 기준점. 서버가 알려준 실제 위치로 수시로 다시 잡는다(아래 참고).
+  let startedAt = Date.now();
+  let baseTime = player.currentTime;
   const speed = player.speed;
+  const sid = streamSid;
+  let syncing = false;
+  let ticks = 0;
   player._tick = setInterval(() => {
     const elapsed = ((Date.now() - startedAt) / 1000) * speed;
     player.currentTime = baseTime + elapsed;
+
+    // **벽시계는 스트림보다 앞서 나간다** — 프레임마다 1/fps를 자는 위에
+    // 디코딩·인코딩·전송 시간이 더 붙기 때문이다. 2초에 한 번 서버에 실제
+    // 위치를 물어 기준점을 다시 잡는다. (currentTime만 덮어쓰면 다음 tick이
+    // 옛 기준점으로 도로 계산해버리므로 baseTime/startedAt을 같이 옮긴다.)
+    if (++ticks % 8 === 0 && !syncing && sid) {
+      syncing = true;
+      api.streamPos(player.name, sid)
+        .then((r) => {
+          const t = r && r.t;
+          if (player.playing && sid === streamSid &&
+              typeof t === "number" && Number.isFinite(t)) {
+            baseTime = t;
+            startedAt = Date.now();
+            player.currentTime = t;
+          }
+        })
+        .catch(() => {})
+        .finally(() => { syncing = false; });
+    }
+
     if (player.duration_s && player.currentTime >= player.duration_s) {
       player.currentTime = player.duration_s;
-      pause();
+      // 끝까지 간 경우는 위치가 확정이다. 서버에 되묻으면 스트림이 뒤처진 만큼
+      // 뒤로 끌려가므로 그냥 끝에 세운다.
+      pause(true);
       return;
     }
     updateSliderUI();
@@ -215,13 +248,41 @@ export function play() {
   startStream();
 }
 
-export function pause() {
+// keepTime=true면 서버에 위치를 되묻지 않고 현재 값 그대로 멈춘다
+// (영상 끝처럼 위치가 이미 확정된 경우).
+export function pause(keepTime = false) {
+  const wasPlaying = player.playing;
   player.playing = false;
   btnPlay.textContent = "▶";
   clearInterval(player._tick);
-  if (player.name) {
+  if (!player.name) return;
+
+  // **화면에 실제로 떠 있던 프레임에서 멈춘다.**
+  //
+  // 재생 위치는 벽시계로 세는데, MJPEG 스트림은 프레임마다 1/fps를 자고 그 위에
+  // 디코딩·전송 시간이 더 붙어서 늘 실시간보다 뒤처진다. 벽시계 값으로 스냅샷을
+  // 받으면 정지하는 순간 화면이 앞으로 건너뛰고, 결함이 촘촘한 구간에서는 마치
+  // "결함 지점으로 제멋대로 이동"하는 것처럼 보인다.
+  //
+  // 그래서 서버에 스트림이 실제로 보낸 마지막 프레임 시각을 물어보고 그 자리에
+  // 멈춘다. 못 물어보면(스트림이 이미 끊겼거나 요청 실패) 예전처럼 벽시계 값을 쓴다.
+  const name = player.name;
+  const settle = (t) => {
+    if (player.playing || player.name !== name) return;   // 그 사이 다시 재생했으면 건드리지 않는다
+    if (typeof t === "number" && Number.isFinite(t)) {
+      player.currentTime = Math.min(Math.max(0, t), player.duration_s || t);
+      updateSliderUI();
+    }
     showSnapshot(player.currentTime);
     renderOverlay();
+  };
+
+  if (wasPlaying && streamSid && !keepTime) {
+    api.streamPos(name, streamSid)
+      .then((r) => settle(r && r.t))
+      .catch(() => settle(null));
+  } else {
+    settle(null);
   }
 }
 

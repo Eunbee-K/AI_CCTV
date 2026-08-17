@@ -19,8 +19,11 @@ from .state import PIPE_META_FIELDS, PROJECT_META_FIELDS, state
 SCHEMA_VERSION = 2
 
 # 행에서 저장할 항목. boxes_norm(오버레이 좌표)까지 담아야 복원 후에도 박스가 보인다.
+# **여기 없는 값은 서버를 껐다 켜면 사라진다.**
+# conf(신뢰도 열)와 manual(이름 없는 행 표시)이 빠져 있어서, 복원한 세션에서는
+# 신뢰도가 전부 0으로 보이고 슬라이더도 무의미해졌다.
 _ROW_KEYS = ("time", "dist", "defects", "note", "direction", "fp", "grade",
-             "boxes", "boxes_norm")
+             "boxes", "boxes_norm", "conf", "manual", "filter_prob")
 _PATH_KEYS = ("frame_path", "frame_annot_path")
 
 
@@ -39,6 +42,13 @@ def _row_from_json(d: dict) -> dict:
     row["boxes_norm"] = list(row.get("boxes_norm") or [])
     row["fp"] = bool(row.get("fp"))
     row["grade"] = row.get("grade") or "중"
+    # 예전 형식으로 저장된 세션에는 conf가 없다. 숫자로 맞춰둬야 표와 슬라이더가
+    # NaN을 만나지 않는다.
+    try:
+        row["conf"] = float(row.get("conf") or 0)
+    except (TypeError, ValueError):
+        row["conf"] = 0.0
+    row["manual"] = bool(row.get("manual"))
     for k in _PATH_KEYS:
         v = d.get(k)
         row[k] = Path(v) if v else None

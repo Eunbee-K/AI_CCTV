@@ -115,7 +115,9 @@
 
       <div id="tabResults" class="tab-page">
         <div class="filter-bar">
-          <label class="filter-label">신뢰도 ≥ <span id="confVal">0</span>%</label>
+          <label class="filter-label"
+                 title="표의 '신뢰도' 열과 같은 값으로 거릅니다.&#10;신뢰도 = 결함 '이름'에 대한 확신입니다(YOLO 박스 점수, 박스가 없으면 분류기 점수).&#10;결함이 있을 확률이 아닙니다.&#10;0%보다 올리면 이름이 안 붙은 행(신뢰도 공란)은 숨겨집니다.">신뢰도 ≥ <span id="confVal">0</span>%
+            <span class="hint-mark" aria-hidden="true">ⓘ</span></label>
           <input type="range" id="confSlider" min="0" max="95" value="0" step="5" />
           <div id="classFilter" class="class-filter"></div>
         </div>

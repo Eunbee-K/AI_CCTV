@@ -2,6 +2,7 @@ import re
 import shutil
 import time
 from pathlib import Path
+from typing import Optional
 
 import cv2
 from fastapi import APIRouter, HTTPException, UploadFile, File
@@ -119,10 +120,11 @@ def list_queue():
 
 
 @router.post("/clear")
-def clear_queue():
-    state.clear_videos()
+def clear_queue(video: Optional[str] = None):
+    """video를 주면 그 영상만 목록에서 뺀다. 없으면 전체(예전 동작)."""
+    removed = state.clear_videos(video)
     session_store.save()
-    return {"status": "ok"}
+    return {"status": "ok", "removed": removed}
 
 
 @router.post("/select")
@@ -163,7 +165,16 @@ def preview_frame(name: str, t: float = 0):
         cap.release()
 
 
-def _mjpeg_generator(path: Path, start_t: float, speed: float = 1.0):
+def _mjpeg_generator(path: Path, start_t: float, speed: float = 1.0,
+                     progress: Optional[dict] = None):
+    """영상을 MJPEG로 흘려보낸다.
+
+    progress를 주면 **지금 보낸 프레임이 몇 초 지점인지** 매 프레임 적어 넣는다.
+    클라이언트는 벽시계로 재생 위치를 추정하는데, 이 스트림은 프레임마다
+    `1/fps`를 자고 그 위에 디코딩·인코딩·전송 시간이 더 붙어서 **항상 실시간보다
+    느리다**. 그래서 정지하는 순간 벽시계 값으로 스냅샷을 받으면 화면이 앞으로
+    훌쩍 건너뛴다 — 결함 지점으로 제멋대로 이동하는 것처럼 보이던 게 이거다.
+    """
     cap = cv2.VideoCapture(str(path))
     try:
         if not cap.isOpened():
@@ -179,6 +190,9 @@ def _mjpeg_generator(path: Path, start_t: float, speed: float = 1.0):
             ok2, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
             if not ok2:
                 break
+            if progress is not None:
+                pos_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
+                progress["t"] = (pos_ms / 1000.0) if pos_ms > 0 else start_t
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n\r\n" + buf.tobytes() + b"\r\n"
@@ -194,12 +208,36 @@ def _mjpeg_generator(path: Path, start_t: float, speed: float = 1.0):
         cap.release()
 
 
+# 재생 중인 스트림이 실제로 어디까지 보냈는지. 키는 `영상이름|스트림id`.
+# 한 사람이 쓰는 로컬 앱이라 메모리 dict로 충분하다.
+_stream_progress: dict = {}
+
+
 @preview_router.get("/stream")
-def preview_stream(name: str, start_t: float = 0, speed: float = 1.0):
+def preview_stream(name: str, start_t: float = 0, speed: float = 1.0,
+                   sid: str = ""):
     path = state.get_path_by_name(name)
     if not path:
         raise HTTPException(404, f"Unknown video: {name}")
+
+    key = f"{name}|{sid}"
+    prog = {"t": start_t}
+    # 스트림은 하나만 살아 있으면 되므로, 새로 열리면 옛 기록을 정리한다.
+    for k in [k for k in _stream_progress if k.startswith(f"{name}|")]:
+        _stream_progress.pop(k, None)
+    _stream_progress[key] = prog
+
     return StreamingResponse(
-        _mjpeg_generator(path, start_t, max(0.25, min(4.0, speed))),
+        _mjpeg_generator(path, start_t, max(0.25, min(4.0, speed)), prog),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
+
+
+@preview_router.get("/stream_pos")
+def stream_pos(name: str, sid: str = ""):
+    """재생 중인 스트림이 **실제로** 보여준 마지막 프레임의 시각(초).
+
+    정지할 때 이 값으로 멈춰야 화면이 튀지 않는다. 스트림이 없으면 t=null.
+    """
+    prog = _stream_progress.get(f"{name}|{sid}")
+    return {"t": prog.get("t") if prog else None}

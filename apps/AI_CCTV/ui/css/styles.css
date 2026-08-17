@@ -623,6 +623,15 @@ td input.cell-edit {
   color: var(--text-sub);
   font-size: 12px;
   white-space: nowrap;
+  cursor: help;   /* 기준 설명이 title에 있다 */
+}
+
+/* 신뢰도 기준을 설명하는 표시. 마우스를 올리면 title이 뜬다. */
+.hint-mark {
+  color: var(--text-sub);
+  opacity: 0.65;
+  font-size: 11px;
+  margin-left: 1px;
 }
 
 .filter-bar input[type="range"] {

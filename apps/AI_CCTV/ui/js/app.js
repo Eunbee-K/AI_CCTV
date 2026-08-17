@@ -244,9 +244,18 @@ async function init() {
   );
 
   document.getElementById("btnClearVideos").addEventListener("click", async () => {
-    await api.clearQueue();
+    // **선택한 영상만** 뺀다. 전체를 지우려면 [초기화]가 따로 있다 —
+    // 여러 개 올려두고 하나만 빼려다 전부 날리는 일이 있었다.
+    const video = getCurrentVideo();
+    if (!video) {
+      alert("목록에서 뺄 영상을 먼저 선택하세요.");
+      return;
+    }
+    if (!confirm(`'${video}'을(를) 목록에서 뺍니다.\n(분석 결과도 함께 지워집니다)`)) return;
+    await api.clearQueue(video);
     await refreshQueue();
     await refreshResults();
+    appendLog({ level: "INFO", msg: `목록에서 제외: ${video}` });
   });
 
   /** 분석 실행 — onlyCurrent면 지금 선택된 영상 하나만 돌린다. */
