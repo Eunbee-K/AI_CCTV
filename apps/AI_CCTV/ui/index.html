@@ -54,8 +54,11 @@
         </div>
       </div>
 
-      <!-- LLM은 쓰는 사람이 많지 않으므로 한 줄만 두고 설정은 창에서 받는다 -->
-      <div class="llm-strip">
+      <!-- LLM은 쓰는 사람이 많지 않으므로 한 줄만 두고 설정은 창에서 받는다.
+           **[신설]을 골랐을 때만 보인다** — 노후관로는 필터+YOLO가 학습된
+           영역이라 세 번째 의견이 필요 없고, 신설은 학습 데이터가 얇아서
+           LLM 판독이 쓸모가 있다. -->
+      <div class="llm-strip" id="llmStrip" hidden>
         <span class="list-title">LLM 판독</span>
         <span id="llmStatus" class="status">꺼짐</span>
         <button id="btnLlmOpen" class="clean-btn">사용</button>

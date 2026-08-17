@@ -18,6 +18,29 @@ function getPipeCondition() {
   return "";
 }
 
+/** LLM 판독 줄은 [신설]을 골랐을 때만 보인다.
+ *
+ *  노후관로는 필터·YOLO가 학습된 영역이라 세 번째 의견이 필요 없고, 신설은
+ *  학습 데이터가 얇아서 LLM이 쓸모가 있다. 숨길 때는 켜져 있던 LLM도 같이 끈다 —
+ *  안 보이는 채로 켜져 있으면 외부 API를 부르는 줄 모르고 분석을 돌리게 된다.
+ */
+function syncLlmVisibility() {
+  const strip = document.getElementById("llmStrip");
+  if (!strip) return;
+  const isNew = getPipeCondition() === "신설";
+  strip.hidden = !isNew;
+  if (!isNew) {
+    // 켜져 있었으면 조용히 끄고 알려준다(회사망에서 쓸 수 없기도 하다).
+    api.getLlm().then((r) => {
+      if (!r || !r.enabled) return;
+      return api.setLlm({ enabled: false }).then(() => {
+        appendLog({ level: "INFO", msg: "노후관로로 바꿔 LLM 판독을 껐습니다." });
+        window.dispatchEvent(new CustomEvent("llm-changed"));
+      });
+    }).catch(() => {});
+  }
+}
+
 function appendLog(msg) {
   const ts = new Date().toLocaleTimeString("ko-KR", { hour12: false });
   const line = document.createElement("div");
@@ -550,6 +573,7 @@ async function init() {
     me.addEventListener("change", async () => {
       if (me.checked) other.checked = false;   // 하나를 켜면 다른 쪽은 꺼진다
       const value = getPipeCondition();
+      syncLlmVisibility();
       try {
         await api.setPipeCondition(value);
         appendLog({ level: "INFO", msg: value ? `관로 구분: ${value}` : "관로 구분 선택 해제" });
@@ -558,6 +582,7 @@ async function init() {
       }
     });
   }
+  syncLlmVisibility();   // 지난 세션에서 복원된 선택에도 맞춘다
 
   // 관로번호 — 표에서 열을 빼고 이리로 옮겼다. 현재 선택된 영상의 값을 고친다.
   const pipeIdEl = document.getElementById("pipeId");
@@ -662,6 +687,14 @@ async function init() {
   try {
     setLlmStatus(await api.getLlm());
   } catch (_) {}
+
+  // 관로 구분을 노후로 바꾸면 LLM이 서버에서 꺼진다(syncLlmVisibility).
+  // 그때 이 줄의 표시도 같이 맞춘다.
+  window.addEventListener("llm-changed", async () => {
+    try {
+      setLlmStatus(await api.getLlm());
+    } catch (_) {}
+  });
 
   btnLlmOpen.addEventListener("click", async () => {
     // 다른 창에서 껐다 켰을 수도 있으니 열 때 서버 상태를 다시 읽는다
