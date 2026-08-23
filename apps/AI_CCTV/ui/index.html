@@ -202,9 +202,8 @@
   <dialog id="dlgLlm" class="dlg">
     <h3 class="dlg-title">LLM 판독 (Gemini + GPT)</h3>
     <p class="dlg-sub">
-      필터가 찾은 구간에 YOLO와 나란히 결함 이름을 붙입니다.
-      <b>회사 서버(GPU)를 못 쓰고 인터넷만 되는 환경</b>에서 쓰는 보조 경로입니다.
-      호출은 이 PC에서 직접 나가므로 외부가 막힌 사내망에서는 켜지지 않습니다.
+      인터넷이 가능한 PC 환경에서 사용 가능합니다.<br />
+      신설관로 분석 시 판독 정확도를 높일 수 있습니다.
     </p>
 
     <div class="llm-fields">
@@ -218,8 +217,10 @@
       </label>
     </div>
     <p class="dlg-sub llm-note">
-      입력한 키는 저장하지 않습니다. 앱을 다시 켜면 다시 넣어야 합니다.
-      환경변수(<code>OPENAI_API_KEY</code>, <code>GOOGLE_API_KEY</code>)로 넣어두면 생략됩니다.
+      <b>주의:</b> LLM 판독은 OpenAI와 Google Gemini API를 사용합니다.<br />
+      API 키를 입력하면 해당 서비스로 영상 결함 정보를 전송하게 되므로, 민감한 정보가 포함된 영상은
+      사용하지 마세요.<br />
+      API 사용량에 따라 요금이 발생할 수 있습니다.
     </p>
 
     <div class="dlg-foot">
@@ -232,11 +233,10 @@
   <!-- 야장 상단 표 입력 -->
   <dialog id="dlgMeta" class="dlg dlg-wide">
     <h3 class="dlg-title">보고서 정보</h3>
-    <p class="dlg-sub">파이프에셋 야장 상단 표에 들어가는 값입니다. 비워두면 실물 야장처럼 공란으로 인쇄됩니다.</p>
+    <p class="dlg-sub">파이프에셋 보고서에 들어가는 내용입니다.</p>
     <div class="meta-target">
       <label for="metaVideo">관로 선택</label>
       <select id="metaVideo"></select>
-      <span class="meta-target-hint">맨홀번호·관종·거리는 관로마다 따로 저장됩니다.</span>
     </div>
     <div id="metaFields" class="meta-grid"></div>
     <div class="dlg-foot">
