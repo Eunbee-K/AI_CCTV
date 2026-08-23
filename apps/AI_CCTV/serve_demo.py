@@ -69,17 +69,18 @@ def main():
                     help="지난 작업을 이어서 연다 (기본은 빈 화면으로 시작)")
     args = ap.parse_args()
 
+    # 콘솔 출력은 영어로 둔다 — 이유는 아래 기동 로그의 주석 참고.
     missing = []
     if not YOLO_MODEL_PATH.exists():
-        missing.append(f"판독기 모델: {YOLO_MODEL_PATH}")
+        missing.append(f"detector: {YOLO_MODEL_PATH}")
     if not CLASSIFIER_MODEL_PATH.exists():
-        missing.append(f"분류기 모델: {CLASSIFIER_MODEL_PATH}")
+        missing.append(f"classifier: {CLASSIFIER_MODEL_PATH}")
     if missing:
-        print("  [오류] 모델 파일이 없습니다:")
+        print("  [ERROR] model file not found:")
         for m in missing:
-            print(f"         {m}")
+            print(f"          {m}")
         print()
-        print("  assets/ 폴더에 모델 파일을 두고 다시 실행하세요.")
+        print("  Put the model files under assets/ and run again.")
         return 1
 
     # create_app()이 세션 복원·로그인 관련 줄을 찍는데, 이 실행판에는 로그인이
@@ -105,14 +106,18 @@ def main():
         state.video_queue.clear()
         state.video_data_map.clear()
 
-    print(f"  판독기 : {YOLO_MODEL_PATH.name}")
+    # **이 줄들은 영어로 쓴다.** 배치파일이 띄우는 콘솔은 CP949인데 파이썬
+    # 기본 출력은 UTF-8이라 한글이 깨진다. PYTHONIOENCODING·reconfigure로도
+    # 환경에 따라 잡히지 않아, 사용자에게 깨진 글자를 보이느니 영어로 둔다.
+    # (배치파일이 찍는 한글 안내는 CP949로 저장돼 있어 정상으로 나온다.)
+    print(f"  Detector   : {YOLO_MODEL_PATH.name}")
     ok, why = defect_classifier.availability()
     if ok:
-        print(f"  분류기 : {CLASSIFIER_MODEL_PATH.name} "
-              f"({len(defect_classifier._classes)}종)")
+        print(f"  Classifier : {CLASSIFIER_MODEL_PATH.name} "
+              f"({len(defect_classifier._classes)} classes)")
     else:
-        print(f"  분류기 : 사용 불가 → 옛 이진 필터로 동작 ({why})")
-    print("  추론   : 이 PC의 CPU (외부 통신 없음)")
+        print(f"  Classifier : unavailable, using legacy filter ({why})")
+    print("  Inference  : local CPU (no external connection)")
     print()
 
     if not args.no_browser:

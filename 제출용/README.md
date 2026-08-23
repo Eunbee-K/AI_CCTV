@@ -1,8 +1,6 @@
 # AI 기반 하수관로 CCTV 영상 자동분석 시스템
 
-**2026 K-eco AI GreenUP 퀘스트 제출**
-수어사이트 스쿼드 (Sewer Sight Squad)
-수도권동부환경본부 환경시설관리처 시설사업5부 · 계은비 · 서선미 · 신홍섭
+하수관로 CCTV 영상에서 결함을 자동으로 찾아 조사표를 만드는 프로그램입니다.
 
 ---
 
@@ -88,17 +86,19 @@
 ## 폴더 구성
 
 ```
-제출용/
-  실행하기.bat        ← 이것을 실행하세요
-  README.md           ← 이 문서
-apps/AI_CCTV/
-  serve_demo.py       실행 진입점 (로컬 전용, 로그인 없음)
+실행하기.bat        ← 이것을 실행하세요
+README.md           ← 이 문서
+app/
+  serve_demo.py     실행 진입점 (로컬 전용, 로그인 없음)
+  requirements.txt  필요한 파이썬 패키지 목록
   assets/
-    best.pt           판독기 — YOLO11-L, 16종 탐지
-    classifier.onnx   분류기 — EfficientNet-B0, 24종
-  backend/            분석 파이프라인 (프레임 추출 · 추론 · OCR · 보고서)
-  ui/                 화면
+    best.pt         판독기 — YOLO11-L, 16종 탐지
+    classifier.onnx 분류기 — EfficientNet-B0, 24종
+  backend/          분석 파이프라인 (프레임 추출 · 추론 · OCR · 보고서)
+  ui/               화면
 ```
+
+압축을 풀면 **`실행하기.bat`과 `app` 폴더가 같은 위치에** 있어야 합니다.
 
 ---
 
