@@ -656,6 +656,10 @@ async function _refreshResults() {
   if (condNew && condOld) {
     condNew.checked = data.pipe_condition === "신설";
     condOld.checked = data.pipe_condition === "노후";
+    // LLM 판독 줄은 [신설]일 때만 보인다. 이 복원은 app.js의 초기
+    // syncLlmVisibility()보다 늦게 도착하므로, 여기서 다시 맞추라고 알린다.
+    // (안 그러면 신설로 복원됐는데 LLM 줄이 숨은 채로 남는다.)
+    window.dispatchEvent(new CustomEvent("pipe-condition-restored"));
   }
   return data;
 }

@@ -582,7 +582,10 @@ async function init() {
       }
     });
   }
-  syncLlmVisibility();   // 지난 세션에서 복원된 선택에도 맞춘다
+  syncLlmVisibility();
+  // 세션 복원은 서버 응답을 기다리므로 위 호출보다 늦게 도착한다.
+  // 복원이 끝났다는 신호를 받아 한 번 더 맞춘다(results-table.js에서 보낸다).
+  window.addEventListener("pipe-condition-restored", syncLlmVisibility);
 
   // 관로번호 — 표에서 열을 빼고 이리로 옮겼다. 현재 선택된 영상의 값을 고친다.
   const pipeIdEl = document.getElementById("pipeId");
