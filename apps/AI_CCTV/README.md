@@ -18,6 +18,22 @@ pip install -r requirements.txt
 python main.py
 ```
 
+### 제출/시연용 (설치까지 자동)
+
+`setup_env.py`가 전용 가상환경(`.venv`)을 만들고 필요한 패키지를 알아서 깐다.
+받는 PC의 파이썬 환경을 건드리지 않는 것이 목적이라, 개발 중에는 위의
+`pip install`을 그대로 쓰면 된다.
+
+```
+python setup_env.py     # 처음 한 번만 (약 1GB, 5~15분)
+python serve_demo.py    # 로그인 없는 로컬 데모
+```
+
+torch는 `--index-url .../whl/cpu`로 **CPU 판**을 받는다. 그냥 받으면 CUDA가
+딸린 2.5GB짜리가 와서, CPU로만 도는 이 앱에는 순수 낭비다.
+설치 묶음을 고칠 때는 `setup_env.py`의 `SETUP_VERSION`을 올려야 이미 깔린
+PC에서도 다시 점검한다.
+
 ## 주요 기능
 
 - 영상 큐 추가/삭제, 미리보기(재생/일시정지/탐색, 1x/1.5x/2x/2.5x 배속) — OpenCV로 프레임을 읽어 JPEG/MJPEG로 서빙 (avi/mkv 등 브라우저가 직접 재생 못 하는 코덱도 동일하게 지원).
