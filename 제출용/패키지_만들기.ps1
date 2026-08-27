@@ -37,6 +37,15 @@ foreach ($m in @("best.pt", "classifier.onnx", "classifier.classes.json")) {
     Copy-Item (Join-Path $src "assets\$m") -Destination (Join-Path $dst "assets") -Force
 }
 
+# LLM 판독에 같이 보내는 예시 사진(237장). 없으면 판독은 되지만 "예시 없음"
+# 으로 정확도가 떨어진다. 원본은 이 개발 PC에만 있는 자리라 반드시 담아야 한다.
+$exSrc = Join-Path $src "assets\llm_examples"
+if (Test-Path $exSrc) {
+    Copy-Item $exSrc -Destination (Join-Path $dst "assets\llm_examples") -Recurse -Force
+} else {
+    Write-Warning "LLM 예시 사진을 찾을 수 없습니다: $exSrc (LLM 판독이 예시 없이 돕니다)"
+}
+
 # 파이썬 캐시는 넣지 않는다 — 다른 PC에서 쓸모없고 용량만 는다.
 Get-ChildItem $dst -Recurse -Directory -Filter "__pycache__" |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue

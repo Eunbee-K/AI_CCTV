@@ -179,6 +179,10 @@ def _find_examples_dir() -> Path:
         return Path(env)
     rel = Path("CCTV/ver.2.0_학습데이터")
     candidates = [
+        # 배포본에 같이 담은 사본. **이것을 맨 앞에 둔다** — 아래 두 경로는
+        # 이 개발 PC에만 있는 자리라, 심사·현장 PC에서는 예시가 통째로 빠져
+        # "예시 없음"으로 판독 품질이 떨어진다.
+        resource_path("assets/llm_examples"),
         Path(__file__).resolve().anchor / rel,          # 이 앱이 놓인 드라이브
         Path.home() / "Desktop" / rel,                  # ver_2.2가 쓰던 자리
     ]
