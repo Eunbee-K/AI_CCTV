@@ -38,3 +38,6 @@ scripts/sweep/mail_config.yaml
 apps/AI_CCTV/public_url.txt
 apps/AI_CCTV/tunnel.log
 
+
+# 참고용 외부 연구자료 PDF (배포 대상 아님, 용량이 크다)
+docs/*.pdf

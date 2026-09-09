@@ -33,15 +33,17 @@
 **`docs/PRD.md`를 반드시 먼저 읽을 것** — 여기 요약은 최소한만 남깁니다.
 
 핵심 요약:
-- **현재 배포된 모델은 없다.** v1~v5는 전부 실험 단계이고 `apps/AI_CCTV/assets/best.pt`도 이
-  저장소에 없다(`.gitignore`의 `*.pt`). 최종 모델은 v6(2026-08-10 예정)에서 구성한다.
-  지금까지의 실험 경과는 `docs/reports/2026-08-04-모델학습-실험정리.md` 참고.
+- **현재 배포된 모델(YOLO)은 없다.** v1~v5는 전부 실험 단계이고 `apps/AI_CCTV/assets/best.pt`도
+  이 저장소에 없다(`.gitignore`의 `*.pt`). 최종 모델은 v6에서 구성한다 — **2026-08-10
+  예정이었으나 지연 중**. 실험 경과는 `docs/reports/2026-08-04-모델학습-실험정리.md` 참고.
+  최고 성적은 v5 18종 bbox mAP50 0.703이고, **클래스를 늘릴수록 mAP가 떨어진다**
+  (2종 0.821 → 5종 0.759 → 18종 0.703).
 - 목표는 18종 탐지(`configs/sweeps/test3_18class.yaml`) / 8종 세그멘테이션
   (`configs/sweeps/test4_seg.yaml`) / 31종 마스터 결함 코드 체계(`docs/메타데이터(총괄).xlsx`).
-  오늘(2026-07-29) 안에 끝내는 20시간 예산판 `test3_18class_20h.yaml` /
-  `test4_seg_20h.yaml`도 있음 (자세한 내용은 세션 로그 참고).
+- **Stage-1 필터는 학습 완료 상태**(EfficientNet-B0, 브랜치 `feat/stage1-classifier`)지만
+  아직 앱에 연동되지 않았고 실영상 검증도 없다.
 - 기본 추론 경로가 Google Colab 무료 GPU + ngrok 고정 도메인에 의존 — 세션 만료 시 탐지 기능 전체가 멈추는
-  구조적 리스크가 있음 (PRD §7 참고).
+  구조적 리스크가 있음 (PRD §7 참고). `serve_web_cpu.py`로 CPU 로컬 추론 경로가 생겨 완화됨.
 
 ## 결함 클래스 코드표 (전체 31종, 자주 참조됨)
 
@@ -60,7 +62,33 @@
 ```
 (출처: `docs/메타데이터(총괄).xlsx` 클래스 코드 시트, `scripts/sweep/label_formats.py::GLOBAL_CLASS_ID`)
 
+## 작업 3줄기
+
+요청이 들어오면 어느 줄기인지 먼저 확인할 것. 2와 3은 둘 다 "모델 학습"이지만 **보는
+숫자가 다르다** — 섞어서 보고하지 말 것.
+
+| 줄기 | 대상 | 평가 기준 |
+|---|---|---|
+| **1. app** | `apps/AI_CCTV` — UI·UX·작업흐름, 사용자가 체감하는 것 | 작업흐름이 매끄러운가 |
+| **2. YOLO 학습** | `configs/sweeps`, `scripts/sweep` — 메인 엔진, 결함 **위치** | mAP |
+| **3. 필터 학습** | `scripts/classifier` — Stage-1 필터, 결함 **유무** | 놓침(recall) / 오탐(FPR) |
+
 ## 최근 작업 로그
+
+### 2026-08-11 세션 — Stage-1 분류 필터 + 앱 관로별 분리
+- **필터(줄기 3, 신규)**: YOLO 앞단에 정상/결함 이진 분류기를 두는 2단계 구조.
+  EfficientNet-B0, 학습 78,388장(정상:결함 1:1, 결함 25종), Colab T4 24 epoch.
+  가장 엄격한 조건에서 재현율 99.4% / 정상 오탐 0.03%, 권장 임계값 0.9.
+  **한계 — 결함 25종 중 9종만 정직하게 검증됐다**(정상이 전부 AIHub 출신이라 S20 전용
+  16종은 출처만으로 분리 가능). 실제 노후관로 영상 검증도 없고, 앱 미연동.
+  코드·보고서는 브랜치 `feat/stage1-classifier` (main 미병합, 의도적).
+  데이터 `AI_CCTV_DATASET/clsdata_v1`, 모델 `AI_CCTV_RESULTS/filter/best.pt`.
+- **앱(줄기 1)**: 관로별 결과 표시·내보내기, 결함항목 콤보박스, 커서/선택 분리,
+  `serve_web_cpu.py`(Colab 없이 CPU 추론), `YOLO_CHUNK_SIZE`로 로컬 추론 OOM 수정,
+  `YOLO_CONF` 0.35→0.10.
+- **fieldset 라벨 정리**: `fieldset_v1_label`에 31클래스 글로벌 id와 Roboflow 9클래스
+  알파벳순 id가 섞여 있던 것을 글로벌 id로 통일(444장 변환, 박스 702개 보존).
+  `data.yaml` `nc: 7`→`31`. **이 데이터는 신설관로용**이라 위 필터 학습에 넣지 않았다.
 
 ### 2026-07-30 세션 — OCR 버그 수정 + 오탐 필터 + 웹 데모(로그인)
 **상세: [`apps/AI_CCTV/docs/WEB_DEMO.md`](apps/AI_CCTV/docs/WEB_DEMO.md) 먼저 읽을 것.** 요약:
@@ -98,8 +126,13 @@
 
 ## 다음에 이어서 할 만한 것 (PRD §8 로드맵 근거)
 
-- `configs/sweeps/test3_18class.yaml` 스윕 실행 → 18종 탐지 모델 학습 (데이터는 이제
-  `aihub_data_bbox/image`, `labels` 아래 클래스별 폴더로 정리되어 있어 바로 활용 가능).
+- **(줄기 2) v6 최종 모델 구성** — 08-10 예정이었으나 지연 중. v5(18종 mAP50 0.703)에서
+  정확도가 나오는 항목만 추려 학습한다. 클래스를 늘릴수록 mAP가 떨어지는 게 확인됐다
+  (2종 0.821 → 5종 0.759 → 18종 0.703).
+- **(줄기 3) Stage-1 필터 실영상 검증** — 노후관로 실제 영상을 1 fps로 흘려 조사표와
+  대조. 지금 `AI_CCTV_DATASET/video/`에 영상이 2개뿐이라 확보가 선행 조건이다.
+  이 검증이 "결함 25종 중 9종만 검증됨" 한계를 한 번에 해소한다.
+- **(줄기 3 → 1) 필터를 앱에 연동** — 임계값 0.9로 거른 프레임만 YOLO에 넘기는 경로.
 - `configs/detect_v2.yaml`의 빈 `names: {}` 필드, `experiments/detect_v2_bk_ds/metadata.yaml`의
   TBD 항목 채워넣기.
-- Colab+ngrok 의존을 벗어난 추론 인프라 검토.
+- Colab+ngrok 의존을 벗어난 추론 인프라 검토 (`serve_web_cpu.py`가 폴백은 되지만 정식 경로는 아님).

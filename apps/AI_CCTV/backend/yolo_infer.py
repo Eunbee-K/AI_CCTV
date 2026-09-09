@@ -2,7 +2,10 @@ import re
 from pathlib import Path
 from typing import List, Tuple
 
-from .config import YOLO_CONF, YOLO_IGNORE_CLASSES, YOLO_IMGSZ, YOLO_MODEL_PATH, YOLO_CLASS_MAP
+from .config import (
+    YOLO_CHUNK_SIZE, YOLO_CONF, YOLO_IGNORE_CLASSES, YOLO_IMGSZ,
+    YOLO_MODEL_PATH, YOLO_CLASS_MAP,
+)
 from .overlay_filter import is_overlay_text_box
 
 try:
@@ -43,16 +46,27 @@ def call_yolo(model, frames: List[Path]) -> Tuple[list, str]:
     if not frames:
         return [], None
 
-    try:
-        preds = model.predict(
-            source=[str(fp) for fp in frames],
-            conf=YOLO_CONF,
-            imgsz=YOLO_IMGSZ,
-            verbose=False
-        )
-    except Exception as e:
-        return [], f"YOLO Error: {e}"
+    # 프레임 리스트를 통째로 predict에 넘기면 ultralytics가 전부 한 배치로 올려서
+    # 수백 장이면 수 GB를 한 번에 요구한다(112장 imgsz 960에서 3.7GB 할당 실패).
+    # 원격 경로가 REMOTE_CHUNK_SIZE로 같은 문제를 피하는 것과 동일하게 나눠 돌린다.
+    preds = []
+    for i in range(0, len(frames), YOLO_CHUNK_SIZE):
+        chunk = frames[i:i + YOLO_CHUNK_SIZE]
+        try:
+            preds.extend(model.predict(
+                source=[str(fp) for fp in chunk],
+                conf=YOLO_CONF,
+                imgsz=YOLO_IMGSZ,
+                verbose=False
+            ))
+        except Exception as e:
+            # 여기까지 처리한 프레임 결과는 살려서 돌려준다
+            return _collect(model, frames[:len(preds)], preds), f"YOLO Error: {e}"
 
+    return _collect(model, frames, preds), None
+
+
+def _collect(model, frames: List[Path], preds: list) -> list:
     items = []
     for fp, pred in zip(frames, preds):
         defects = set()
@@ -102,4 +116,4 @@ def call_yolo(model, frames: List[Path]) -> Tuple[list, str]:
                 "boxes": boxes_out,
             })
 
-    return items, None
+    return items
