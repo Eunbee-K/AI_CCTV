@@ -1,0 +1,117 @@
+# test6 — 정확도(mAP50) 우선 축소판. 2026-08-07 세션에서:
+#   1) test3(18종) 실제 영상 테스트 → recall/정밀도 이슈, 클래스별 성능 편차 확인
+#   2) test5(17종, DEFORM/OBST 병합) 설계
+#   3) test5의 클래스별 mAP50 실측/추정치를 순위로 매겨, 상위권만 골라
+#      0.85대에 최대한 가깝게 만든 조합이 이 test6.
+#
+# 결함 7종: LP/DS/JD/LS/SG/BK(test3 실측 mAP50 0.74~0.95) + OBST(이물질 병합,
+# 미학습 추정 0.62~0.72). JF(0.604)는 평균을 깎아서 제외.
+# 정상(배경) 5종: PJ/IN(원래 배경 클래스) + OUT_MH/OUT_INVERT/OUT_CAR
+# (외부 맨홀/인버트/차량 촬영 컷 — 원래 진짜 바운딩박스가 있는 소스지만,
+# merge_codes: [] 로 박스를 전부 걸러내서 PJ/IN과 똑같이 순수 배경/네거티브
+# 샘플로만 쓴다. 조사 영상이 지상 맨홀 촬영으로 시작해서 관 안으로 내려가는
+# 구조라, 이 구간에서 오탐이 안 나게 하는 데 도움될 것으로 기대).
+#
+# merge_codes 동작은 scripts/sweep/collect_dataset.py::materialize +
+# scripts/sweep/label_formats.py::remap_global_yolo_lines 참고.
+
+sweep_name: test6_12class_sweep01
+
+dataset:
+  external_root: /home/workstation/ai_cctv/AI_CCTV_DATASET/original
+  split_seed: 42
+
+  classes:
+    BK:
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/BK_S20_파손"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_BK_05파손(BK)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: BK}
+    DS:
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/DS_S20_토사퇴적"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_DS_11토사퇴적(DS)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: DS}
+    JD:
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/JD_S20_이음부(단차)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_JD_08이음부단차(JD)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: JD}
+    LP:
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/LP_S20_연결관(돌출)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_LP_06연결관돌출(LP)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: LP}
+    LS:
+      quota: {train: 7036, val: 880, test: 880}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/LS_S20_연결관(접합부이상)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_LS_07연결관접합부(LS)"}
+    SG:
+      quota: {train: 505, val: 63, test: 63}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/SG_S20_침하"}
+    OBST:
+      # 이물질: 영구장애물(PO)+뿌리침입(RT)+임시장애물(TO)+침입수(IF)+폐유부착(DG).
+      merge_codes: [PO, RT, TO, IF, DG]
+      quota: {train: 2002, val: 250, test: 250}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/PO_S20_영구장애물"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/RT_S20_뿌리침입"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/TO_S20_임시장애물"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/IF_S20_침입수"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/DG_S20_폐유부착"}
+
+    # ── 정상(배경) 5종 ──────────────────────────────────────────────
+    PJ:
+      background: true
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: PJ}
+    IN:
+      background: true
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: IN}
+    OUT_MH:
+      # 실제 라벨엔 맨홀 박스가 있지만 merge_codes: [] 로 전부 걸러내
+      # PJ/IN과 동일하게 순수 배경 샘플로만 사용 (탐지 클래스 아님).
+      background: true
+      merge_codes: []
+      quota: {train: 7200, val: 900, test: 900}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: OUT_MH}
+    OUT_INVERT:
+      background: true
+      merge_codes: []
+      quota: {train: 7200, val: 900, test: 900}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: OUT_INVERT}
+    OUT_CAR:
+      background: true
+      merge_codes: []
+      quota: {train: 7200, val: 900, test: 900}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: OUT_CAR}
+    # ─────────────────────────────────────────────────────────────
+
+workspace:
+  dataset_root: /home/workstation/ai_cctv/_sweep_workspace/dataset
+  results_root: /home/workstation/ai_cctv/AI_CCTV_RESULTS
+  summary_csv: /home/workstation/ai_cctv/AI_CCTV_RESULTS/test6_12class_sweep01/sweep_summary.csv
+
+model: /home/workstation/ai_cctv/pretrained_models/yolo11l.pt
+device: 0
+cache: false
+cos_lr: true
+patience: 30
+
+runs:
+  - name: test6_960_e50
+    imgsz: 960
+    epochs: 50
+    batch: 8

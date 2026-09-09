@@ -1,0 +1,158 @@
+# test5 데이터셋 구성 — test3_18class 기반, 저데이터 클래스들을 슈퍼클래스로 병합.
+#
+# 2026-08-07 세션에서 실제 조사 영상으로 test3(18종) 모델을 테스트해보니:
+#   - 관 찌그러짐(좌굴/변형/붕괴 계열)이 test3 학습 범위에 아예 없었음
+#     (AI Hub엔 해당 결함 데이터가 0장, 서울시에만 소량 존재)
+#   - 영구장애물(PO)/뿌리침입(RT)/임시장애물(TO)은 각각 550~830장뿐이라
+#     개별 클래스로는 저성능(mAP50 0.51~0.73)
+#   - 침입수(IF)/폐유부착(DG)도 각각 139/303장으로 단독 학습 불가 수준.
+#     실제 사진을 보면 이 두 폴더에도 이물질(돌 등)이 섞여 있어 PO/RT/TO와
+#     같은 "관 안에 낯선 것이 있다" 그룹으로 봐도 무리 없다고 판단(사용자 확인).
+#
+# 그래서 두 개의 슈퍼클래스로 합침 (merge_codes: run_sweep이 원본 전역
+# class id를 이 로컬 클래스로 리매핑할 때, 나열된 원본 코드를 전부 이
+# 클래스로 흡수한다 — scripts/sweep/collect_dataset.py::materialize 참고):
+#
+#   DEFORM (구조변형)  = BC(좌굴 420) + DF(변형 285) + CX(붕괴 14)   = 719장
+#   OBST   (이물질)    = PO(830) + RT(550) + TO(680) + IF(침입수 139) + DG(폐유부착 303) = 2,502장
+#
+# 나머지 15클래스(BK/CC/CL/CM/DS/HL/JD/JF/JS/LP/LS/SD/SG/PJ/IN)는 test3와 동일.
+# 총 15 + 2(병합) = 17클래스.
+#
+# 워크스테이션 로컬 디스크에 AI_CCTV_DATASET/original 전체를 복사해두고
+# 쓰는 구성 (외장하드를 뽑아도 그대로 동작).
+
+sweep_name: test5_17class_sweep01
+
+dataset:
+  external_root: /home/workstation/ai_cctv/AI_CCTV_DATASET/original
+  split_seed: 42
+
+  classes:
+    BK:
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/BK_S20_파손"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_BK_05파손(BK)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: BK}
+    CC:
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/CC_S20_균열(원주)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_CC_03균열원주(CC)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: CC}
+    CL:
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/CL_S20_균열(길이)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_CL_01균열길이(CL)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: CL}
+    CM:
+      quota: {train: 617, val: 77, test: 77}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/CM_S20_균열(복합)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_CM_02균열복합(CM)"}
+    DS:
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/DS_S20_토사퇴적"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_DS_11토사퇴적(DS)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: DS}
+    HL:
+      quota: {train: 886, val: 111, test: 110}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/HL_S20_천공"}
+    JD:
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/JD_S20_이음부(단차)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_JD_08이음부단차(JD)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: JD}
+    JF:
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/JF_S20_이음부(손상)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_JF_09이음부손상(JF)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: JF}
+    JS:
+      quota: {train: 3300, val: 412, test: 412}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/JS_S20_이음부(이탈)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_JS_10이음부이탈(JS)"}
+    LP:
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/LP_S20_연결관(돌출)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_LP_06연결관돌출(LP)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: LP}
+    LS:
+      quota: {train: 7036, val: 880, test: 880}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/LS_S20_연결관(접합부이상)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_LS_07연결관접합부(LS)"}
+    SD:
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/SD_S20_표면손상"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/S22_SD_04표면손상(SD)"}
+        - {type: yolo_txt, path: "aihub_data_bbox", code: SD}
+    SG:
+      quota: {train: 505, val: 63, test: 63}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/SG_S20_침하"}
+
+    # ── 신규 슈퍼클래스 2개 ──────────────────────────────────────────
+    DEFORM:
+      # 구조변형: 좌굴(BC)+변형(DF)+붕괴(CX). 전량 서울시(S20)뿐, AI Hub 0장.
+      # CX는 14장뿐이라 사실상 BC/DF가 대부분.
+      merge_codes: [BC, DF, CX]
+      quota: {train: 575, val: 72, test: 72}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/BC_S20_좌굴"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/DF_S20_변형(단면형태변화)"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/CX_S20_붕괴"}
+    OBST:
+      # 이물질: 영구장애물(PO)+뿌리침입(RT)+임시장애물(TO)+침입수(IF)+폐유부착(DG).
+      # 전량 서울시(S20)뿐, AI Hub 0장.
+      merge_codes: [PO, RT, TO, IF, DG]
+      quota: {train: 2002, val: 250, test: 250}
+      sources:
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/PO_S20_영구장애물"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/RT_S20_뿌리침입"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/TO_S20_임시장애물"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/IF_S20_침입수"}
+        - {type: seoul_txt, path: "rename_data_s20_s22_bbox/DG_S20_폐유부착"}
+    # ─────────────────────────────────────────────────────────────
+
+    # PJ(이음부 정상)/IN(하수관로 내부)은 결함이 아니라 "정상" 문맥 클래스.
+    # 원본 라벨엔 자기 자신을 가리키는 bbox가 있었지만 이미 비워뒀고
+    # (원본은 aihub_data_bbox/labels_original_backup/에 보존),
+    # background: true를 켜두면 박스가 없어도 이미지를 건너뛰지 않고
+    # 빈 라벨(배경/정상 샘플)로 그대로 학습셋에 포함시킨다.
+    PJ:
+      background: true
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: PJ}
+    IN:
+      background: true
+      quota: {train: 12000, val: 1500, test: 1500}
+      sources:
+        - {type: yolo_txt, path: "aihub_data_bbox", code: IN}
+
+workspace:
+  dataset_root: /home/workstation/ai_cctv/_sweep_workspace/dataset
+  results_root: /home/workstation/ai_cctv/AI_CCTV_RESULTS
+  summary_csv: /home/workstation/ai_cctv/AI_CCTV_RESULTS/test5_17class_sweep01/sweep_summary.csv
+
+model: /home/workstation/ai_cctv/pretrained_models/yolo11l.pt
+device: 0
+cache: false
+cos_lr: true
+patience: 30
+
+runs:
+  - name: test5_960_e50
+    imgsz: 960
+    epochs: 50
+    batch: 8

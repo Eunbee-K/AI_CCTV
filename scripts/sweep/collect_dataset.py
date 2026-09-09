@@ -158,7 +158,15 @@ def materialize(cfg: dict, dest_dir) -> dict:
     external_root = Path(ds["external_root"])
     classes_cfg = ds["classes"]
     class_codes = list(classes_cfg.keys())
-    class_to_id = {code: i for i, code in enumerate(class_codes)}
+    # 라벨은 항상 원본 전역 코드(GLOBAL_CLASS_ID)로 저장돼 있으므로, 리매핑은
+    # "이번 실험의 클래스 키"가 아니라 "그 클래스가 흡수하는 원본 코드들"
+    # 기준으로 이뤄져야 한다. merge_codes가 없으면 자기 자신(=클래스 키)만
+    # 매핑해서 기존 1:1 동작과 동일하다 (예: 여러 저데이터 코드를 하나의
+    # 슈퍼클래스로 합칠 때 merge_codes: [PO, RT, TO, IF, DG] 처럼 쓴다).
+    class_to_id = {}
+    for i, code in enumerate(class_codes):
+        for global_code in classes_cfg[code].get("merge_codes", [code]):
+            class_to_id[global_code] = i
     seed = ds.get("split_seed", 42)
 
     dest_dir = Path(dest_dir)
